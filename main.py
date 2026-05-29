@@ -5,13 +5,18 @@ API_KEY = "2UFIT1549JNPNLPY"
 BASE_URL = "https://www.alphavantage.co/query"
 
 
-class RiskTradingEngine:
+class SafeTradingBot:
     def __init__(self):
         self.prices = []
 
-        # risk settings (VERY IMPORTANT)
-        self.account_balance = 1000  # demo assumption
-        self.risk_per_trade = 0.02   # 2% risk max
+        # 🛡️ SAFETY SETTINGS (VERY IMPORTANT)
+        self.account_balance = 10  # small account protection mode
+        self.risk_per_trade = 0.01  # 1% max risk per trade
+        self.max_daily_loss = 0.03  # stop if -3%
+        self.daily_loss = 0
+
+        self.trade_count = 0
+        self.max_trades_per_day = 20
 
     def fetch_price(self):
         try:
@@ -37,14 +42,20 @@ class RiskTradingEngine:
             return None
         return sum(self.prices[-window:]) / window
 
-    def calculate_position_size(self):
-        # simple risk model
-        risk_amount = self.account_balance * self.risk_per_trade
-        return round(risk_amount, 2)
+    def risk_check(self):
+        if self.daily_loss >= self.max_daily_loss:
+            print("🛑 DAILY LOSS LIMIT HIT — BOT STOPPED")
+            return False
+
+        if self.trade_count >= self.max_trades_per_day:
+            print("🛑 TRADE LIMIT REACHED — BOT STOPPED")
+            return False
+
+        return True
 
     def analyze(self, price):
         if price is None:
-            return "NO TRADE", 0, None, None, ["No market data"]
+            return "NO TRADE", 0, None, ["No data"]
 
         self.prices.append(price)
         if len(self.prices) > 50:
@@ -59,19 +70,17 @@ class RiskTradingEngine:
         if ma_fast and ma_slow:
             if ma_fast > ma_slow:
                 score += 20
-                reasons.append("Uptrend detected")
+                reasons.append("Uptrend")
             else:
                 score += 20
-                reasons.append("Downtrend detected")
+                reasons.append("Downtrend")
 
-        # volatility check
         if len(self.prices) > 2:
             momentum = abs(price - self.prices[-2])
             if momentum > 0.002:
                 score += 10
-                reasons.append("High momentum detected")
+                reasons.append("Momentum detected")
 
-        # market zone logic
         if price > 1.10:
             score += 10
             reasons.append("Upper zone")
@@ -82,42 +91,45 @@ class RiskTradingEngine:
 
         score = max(0, min(100, score))
 
-        # risk filter (IMPORTANT)
         if score < 75:
-            return "NO TRADE", score, None, None, reasons
+            return "NO TRADE", score, None, reasons
 
-        # trade decision
         direction = "BUY" if ma_fast and ma_fast > ma_slow else "SELL"
 
-        position_size = self.calculate_position_size()
+        # risk-based position sizing (VERY SMALL FOR $10 ACCOUNT)
+        position_size = round(self.account_balance * self.risk_per_trade, 2)
 
-        # fake SL/TP (for structure only)
-        stop_loss = price - 0.002 if direction == "BUY" else price + 0.002
-        take_profit = price + 0.004 if direction == "BUY" else price - 0.004
+        return direction, score, position_size, reasons
 
-        return direction, score, position_size, (stop_loss, take_profit), reasons
+    def execute_trade(self, signal, size):
+        # simulated execution (we will connect broker later)
+        self.trade_count += 1
+        print(f"📊 EXECUTED: {signal} | SIZE: {size}")
 
     def run(self):
-        print("AMIES RISK ENGINE ONLINE")
+        print("🛡️ SAFE TRADING BOT ONLINE (CAPITAL PROTECTED MODE)")
 
         while True:
+
+            if not self.risk_check():
+                break
+
             price = self.fetch_price()
-            signal, score, size, levels, reasons = self.analyze(price)
+            signal, score, size, reasons = self.analyze(price)
 
             print("\n--------------------")
             print("PRICE:", price)
             print("SIGNAL:", signal)
             print("CONFIDENCE:", score)
 
-            if signal != "NO TRADE":
-                print("POSITION SIZE:", size)
-                print("SL/TP:", levels)
-
             for r in reasons:
                 print("REASON:", r)
+
+            if signal != "NO TRADE":
+                self.execute_trade(signal, size)
 
             time.sleep(20)
 
 
-engine = RiskTradingEngine()
-engine.run()
+bot = SafeTradingBot()
+bot.run()
