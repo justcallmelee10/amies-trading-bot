@@ -9,16 +9,15 @@ class SafeTradingBot:
     def __init__(self):
         self.prices = []
 
-        # 🛡️ SAFETY SETTINGS (VERY IMPORTANT)
-        self.account_balance = 10  # small account protection mode
-        self.risk_per_trade = 0.01  # 1% max risk per trade
-        self.max_daily_loss = 0.03  # stop if -3%
+        # SAFETY SETTINGS (PROTECT SMALL ACCOUNTS)
+        self.account_balance = 10
+        self.risk_per_trade = 0.01
+        self.max_daily_loss = 0.03
         self.daily_loss = 0
-
         self.trade_count = 0
         self.max_trades_per_day = 20
 
-    def fetch_price(self):
+    def get_price(self):
         try:
             response = requests.get(BASE_URL, params={
                 "function": "CURRENCY_EXCHANGE_RATE",
@@ -29,12 +28,25 @@ class SafeTradingBot:
 
             data = response.json()
 
-            if "Realtime Currency Exchange Rate" not in data:
+            # API limit handling
+            if "Note" in data:
+                print("⏳ API LIMIT REACHED - waiting...")
+                time.sleep(30)
                 return None
 
-            return float(data["Realtime Currency Exchange Rate"]["5. Exchange Rate"])
+            block = data.get("Realtime Currency Exchange Rate")
+            if not block:
+                print("⚠️ No market data")
+                return None
 
-        except:
+            price = block.get("5. Exchange Rate")
+            if not price:
+                return None
+
+            return float(price)
+
+        except Exception as e:
+            print("⚠️ Error:", e)
             return None
 
     def moving_average(self, window):
@@ -44,18 +56,18 @@ class SafeTradingBot:
 
     def risk_check(self):
         if self.daily_loss >= self.max_daily_loss:
-            print("🛑 DAILY LOSS LIMIT HIT — BOT STOPPED")
+            print("🛑 DAILY LOSS LIMIT HIT - STOPPING BOT")
             return False
 
         if self.trade_count >= self.max_trades_per_day:
-            print("🛑 TRADE LIMIT REACHED — BOT STOPPED")
+            print("🛑 MAX TRADE LIMIT REACHED - STOPPING BOT")
             return False
 
         return True
 
     def analyze(self, price):
         if price is None:
-            return "NO TRADE", 0, None, ["No data"]
+            return "NO TRADE", 0, None, ["Waiting for valid data"]
 
         self.prices.append(price)
         if len(self.prices) > 50:
@@ -70,10 +82,10 @@ class SafeTradingBot:
         if ma_fast and ma_slow:
             if ma_fast > ma_slow:
                 score += 20
-                reasons.append("Uptrend")
+                reasons.append("Uptrend detected")
             else:
                 score += 20
-                reasons.append("Downtrend")
+                reasons.append("Downtrend detected")
 
         if len(self.prices) > 2:
             momentum = abs(price - self.prices[-2])
@@ -96,37 +108,37 @@ class SafeTradingBot:
 
         direction = "BUY" if ma_fast and ma_fast > ma_slow else "SELL"
 
-        # risk-based position sizing (VERY SMALL FOR $10 ACCOUNT)
         position_size = round(self.account_balance * self.risk_per_trade, 2)
 
         return direction, score, position_size, reasons
 
     def execute_trade(self, signal, size):
-        # simulated execution (we will connect broker later)
         self.trade_count += 1
         print(f"📊 EXECUTED: {signal} | SIZE: {size}")
 
     def run(self):
-        print("🛡️ SAFE TRADING BOT ONLINE (CAPITAL PROTECTED MODE)")
+        print("🛡️ SAFE TRADING BOT ONLINE")
 
         while True:
 
             if not self.risk_check():
                 break
 
-            price = self.fetch_price()
+            price = self.get_price()
+
             signal, score, size, reasons = self.analyze(price)
 
-            print("\n--------------------")
+            print("\n----------------------")
             print("PRICE:", price)
             print("SIGNAL:", signal)
             print("CONFIDENCE:", score)
 
+            if signal != "NO TRADE":
+                print("POSITION SIZE:", size)
+                self.execute_trade(signal, size)
+
             for r in reasons:
                 print("REASON:", r)
-
-            if signal != "NO TRADE":
-                self.execute_trade(signal, size)
 
             time.sleep(20)
 
