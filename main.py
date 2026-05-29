@@ -4,61 +4,82 @@ import time
 API_KEY = "2UFIT1549JNPNLPY"
 BASE_URL = "https://www.alphavantage.co/query"
 
-def get_price():
-    try:
-        response = requests.get(BASE_URL, params={
-            "function": "CURRENCY_EXCHANGE_RATE",
-            "from_currency": "EUR",
-            "to_currency": "USD",
-            "apikey": API_KEY
-        }, timeout=10)
 
-        data = response.json()
+class MarketBot:
+    def __init__(self):
+        self.last_price = None
 
-        if not isinstance(data, dict):
-            print("Bad response format")
+    def fetch_price(self):
+        try:
+            response = requests.get(BASE_URL, params={
+                "function": "CURRENCY_EXCHANGE_RATE",
+                "from_currency": "EUR",
+                "to_currency": "USD",
+                "apikey": API_KEY
+            }, timeout=10)
+
+            data = response.json()
+
+            if "Realtime Currency Exchange Rate" not in data:
+                return None
+
+            return float(data["Realtime Currency Exchange Rate"]["5. Exchange Rate"])
+
+        except:
             return None
 
-        if "Note" in data:
-            print("API limit hit - waiting")
-            return None
+    def analyze(self, price):
+        if price is None:
+            return "NO TRADE", 0, ["No valid market data"]
 
-        rate_block = data.get("Realtime Currency Exchange Rate")
-        if not rate_block:
-            print("No market data")
-            return None
+        score = 50
+        reasons = []
 
-        return float(rate_block.get("5. Exchange Rate"))
+        # trend zones (simple structure logic)
+        if price > 1.10:
+            score += 25
+            reasons.append("Upper zone pressure (possible sell area)")
 
-    except Exception as e:
-        print("Safe error:", e)
-        return None
+        elif price < 1.08:
+            score += 25
+            reasons.append("Lower zone pressure (possible buy area)")
+
+        else:
+            score -= 10
+            reasons.append("Neutral market zone")
+
+        # volatility awareness (simple momentum proxy)
+        if self.last_price:
+            change = abs(price - self.last_price)
+            if change > 0.002:
+                score += 10
+                reasons.append("Active volatility detected")
+
+        self.last_price = price
+
+        score = max(0, min(100, score))
+
+        signal = "TRADE READY" if score >= 70 else "NO TRADE"
+
+        return signal, score, reasons
+
+    def run(self):
+        print("AMIES FINAL CORE ENGINE STARTED")
+
+        while True:
+            price = self.fetch_price()
+            signal, score, reasons = self.analyze(price)
+
+            print("\n----------------------")
+            print("PRICE:", price)
+            print("SIGNAL:", signal)
+            print("CONFIDENCE:", score)
+
+            for r in reasons:
+                print("REASON:", r)
+
+            time.sleep(20)
 
 
-def strategy(price):
-    if price is None:
-        return "NO TRADE", ["Waiting for data"]
-
-    if price > 1.10:
-        return "SELL", ["Resistance zone detected"]
-
-    if price < 1.08:
-        return "BUY", ["Support zone detected"]
-
-    return "NO TRADE", ["Neutral market"]
-
-
-print("AMIES BOT STARTED (STABLE SERVICE MODE)")
-
-while True:
-    price = get_price()
-    signal, reasons = strategy(price)
-
-    print("\n---")
-    print("PRICE:", price)
-    print("SIGNAL:", signal)
-
-    for r in reasons:
-        print("REASON:", r)
-
-    time.sleep(20)
+bot = MarketBot()
+bot.run()
