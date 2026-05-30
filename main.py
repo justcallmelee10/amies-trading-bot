@@ -4,8 +4,6 @@ import time
 BOT_TOKEN = "8637865419:AAH-pSZe4e1zgPOng9kcwYjpnxYS6v80v_c"
 CHAT_ID = "8236639818"
 
-PRICE_URL = "https://api.frankfurter.app/latest?from=EUR&to=USD"
-
 
 class PaperBot:
 
@@ -16,7 +14,7 @@ class PaperBot:
         self.open_trade = None
 
         self.last_trade_time = 0
-        self.cooldown = 90
+        self.cooldown = 60
         self.last_direction = None
         self.last_signal = None
 
@@ -28,17 +26,24 @@ class PaperBot:
         except Exception as e:
             print("TELEGRAM ERROR:", e)
 
-    # ---------------- PRICE (FIXED API) ----------------
+    # ---------------- PRICE (STABLE SOURCE - NO KEYS) ----------------
     def get_price(self):
         try:
-            r = requests.get(PRICE_URL, timeout=10)
+            # EUR/USD from Stooq (free, stable)
+            url = "https://stooq.com/q/l/?s=eurusd&f=sd2t2ohlcv&h&e=json"
+            r = requests.get(url, timeout=10)
             data = r.json()
 
-            if "rates" not in data:
+            if "symbols" not in data:
                 print("BAD RESPONSE:", data)
                 return None
 
-            return float(data["rates"]["USD"])
+            price = data["symbols"][0]["close"]
+
+            if price is None:
+                return None
+
+            return float(price)
 
         except Exception as e:
             print("PRICE ERROR:", e)
@@ -49,10 +54,10 @@ class PaperBot:
 
         self.prices.append(price)
 
-        if len(self.prices) > 80:
+        if len(self.prices) > 50:
             self.prices.pop(0)
 
-        if len(self.prices) < 15:
+        if len(self.prices) < 10:
             return "NO TRADE"
 
         short = self.prices[-3:]
@@ -63,7 +68,7 @@ class PaperBot:
 
         volatility = max(mid) - min(mid)
         avg = sum(mid) / len(mid)
-        threshold = avg * 0.00025
+        threshold = avg * 0.0003
 
         if volatility < threshold:
             return "NO TRADE"
@@ -154,7 +159,7 @@ Balance: {round(self.balance,2)}""")
     # ---------------- MAIN LOOP ----------------
     def run(self):
 
-        print("🔥 BOT STARTED - STABLE FX MODE")
+        print("🔥 BOT STARTED - FINAL STABLE VERSION")
 
         while True:
 
@@ -163,13 +168,13 @@ Balance: {round(self.balance,2)}""")
                 price = self.get_price()
 
                 if price is None:
-                    time.sleep(5)
+                    time.sleep(10)
                     continue
 
                 sig = self.signal(price)
 
                 if sig == self.last_signal:
-                    time.sleep(5)
+                    time.sleep(10)
                     continue
 
                 self.last_signal = sig
@@ -181,11 +186,11 @@ Balance: {round(self.balance,2)}""")
                 else:
                     self.close_trade(price)
 
-                time.sleep(5)
+                time.sleep(10)
 
             except Exception as e:
                 print("LOOP ERROR:", e)
-                time.sleep(5)
+                time.sleep(10)
 
 
 # ---------------- START ----------------
