@@ -28,36 +28,38 @@ class PaperBot:
 
     # ---------------- SAFE PRICE FETCH (NO CRASH) ----------------
     def get_price(self):
-        try:
-            url = "https://stooq.com/q/l/?s=eurusd&f=sd2t2ohlcv&h&e=json"
-            r = requests.get(url, timeout=10)
+    try:
+        url = "https://stooq.com/q/l/?s=eurusd&f=sd2t2ohlcv&h&e=json"
+        r = requests.get(url, timeout=10)
 
-            # 🔥 DO NOT ASSUME JSON IS VALID
-            if r.status_code != 200:
-                print("BAD STATUS CODE:", r.status_code)
-                return None
-
-            try:
-                data = r.json()
-            except Exception:
-                print("RAW RESPONSE (NOT JSON):", r.text[:200])
-                return None
-
-            if "symbols" not in data:
-                print("BAD RESPONSE FORMAT:", data)
-                return None
-
-            price = data["symbols"][0].get("close")
-
-            if price is None:
-                return None
-
-            return float(price)
-
-        except Exception as e:
-            print("PRICE ERROR:", e)
+        if r.status_code != 200:
+            print("BAD STATUS:", r.status_code)
             return None
 
+        text = r.text.strip()
+
+        # 🔥 safety check: must look like valid JSON
+        if not text.startswith("{") or not text.endswith("}"):
+            print("INVALID RESPONSE:", text[:200])
+            return None
+
+        data = r.json()
+
+        symbols = data.get("symbols")
+        if not symbols or len(symbols) == 0:
+            print("NO SYMBOL DATA:", data)
+            return None
+
+        price = symbols[0].get("close")
+
+        if price is None:
+            return None
+
+        return float(price)
+
+    except Exception as e:
+        print("PRICE ERROR:", e)
+        return None
     # ---------------- SIGNAL ENGINE ----------------
     def signal(self, price):
 
