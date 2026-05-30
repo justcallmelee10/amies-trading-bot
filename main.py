@@ -28,7 +28,10 @@ class PaperBot:
 
             r = requests.post(
                 url,
-                data={"chat_id": CHAT_ID, "text": msg},
+                data={
+                    "chat_id": CHAT_ID,
+                    "text": msg
+                },
                 timeout=10
             )
 
@@ -37,16 +40,14 @@ class PaperBot:
         except Exception as e:
             print("TELEGRAM ERROR:", e)
 
-    # ---------------- PRICE ENGINE (FIXED + STABLE) ----------------
+    # ---------------- PRICE ENGINE (STABLE) ----------------
     def get_price(self):
 
         try:
-            # stable FX endpoint
             url = "https://api.fxratesapi.com/latest?base=EUR&currencies=USD"
             r = requests.get(url, timeout=10)
 
             data = r.json()
-
             price = data["rates"]["USD"]
 
             self.last_price = float(price)
@@ -54,8 +55,6 @@ class PaperBot:
 
         except Exception as e:
             print("PRICE ERROR:", e)
-
-            # fallback to last known price
             return self.last_price
 
     # ---------------- SIGNAL ENGINE ----------------
@@ -75,7 +74,7 @@ class PaperBot:
         short = self.prices[-3:]
         mid = self.prices[-8:]
 
-        short_trend = short[-1] - short[0]
+        short_trend = short[-1] - short[-0]
         mid_trend = mid[-1] - mid[0]
 
         volatility = max(mid) - min(mid)
@@ -163,48 +162,45 @@ class PaperBot:
 
         self.send(f"📤 {result}\nPnL: {round(pnl,5)}\nBalance: {round(self.balance,2)}")
 
-    # ---------------- MAIN LOOP ----------------
+    # ---------------- MAIN LOOP (STABLE + KEEP ALIVE) ----------------
     def run(self):
 
         print("🔥 BOT RUNNING - STABLE MODE")
+        self.send("✅ BOT STARTED")
 
         while True:
 
             try:
+                print("HEARTBEAT:", time.time())
 
                 price = self.get_price()
 
                 if price is None:
-                    print("NO PRICE → waiting fallback active")
-                    time.sleep(5)
+                    print("NO PRICE → waiting")
+                    time.sleep(2)
                     continue
 
                 sig = self.signal(price)
-
-                if sig == self.last_signal:
-                    time.sleep(5)
-                    continue
-
-                self.last_signal = sig
 
                 print("PRICE:", price, "SIGNAL:", sig)
 
                 if self.open_trade is None:
                     if sig != "NO TRADE" and self.can_trade(sig):
                         self.open_trade_fn(sig, price)
-
                 else:
                     self.close_trade(price)
 
-                time.sleep(5)
+                # keep container alive
+                requests.get("https://www.google.com", timeout=5)
+
+                time.sleep(2)
 
             except Exception as e:
                 print("LOOP ERROR:", e)
-                time.sleep(5)
+                time.sleep(2)
 
 
 # ---------------- START ----------------
 if __name__ == "__main__":
     bot = PaperBot()
-    bot.send("✅ BOT STARTED")
     bot.run()
