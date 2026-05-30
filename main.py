@@ -2,7 +2,8 @@ import requests
 import time
 
 API_KEY = "2UFIT1549JNPNLPY"
-BOT_TOKEN = "8637865419:AAH-pSZe4e1zgPOng9kcwYjpnxYS6v80v_c"
+BOT_TOKEN = "8637865419:AAH
+pSZe4e1zgPOng9kcwYjpnxYS6v80v_c"
 CHAT_ID = "8236639818"
 
 BASE_URL = "https://www.alphavantage.co/query"
@@ -163,6 +164,7 @@ BALANCE: {round(self.balance,2)}""")
         print("BOT RUNNING")
 
         while True:
+
             try:
 
                 price = self.get_price()
@@ -189,14 +191,10 @@ BALANCE: {self.balance}""")
                 time.sleep(5)
 
             except Exception as e:
-                print("LOOP ERROR:", e)
+                print("ERROR:", e)
                 time.sleep(5)
 
 
-# ---------------- START SAFELY ----------------
 if __name__ == "__main__":
-    try:
-        bot = PaperBot()
-        bot.run()
-    except Exception as e:
-        print("FATAL ERROR:", e)
+    bot = PaperBot()
+    bot.run()
