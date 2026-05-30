@@ -10,15 +10,15 @@ class PaperBot:
     def __init__(self):
 
         self.prices = []
-        self.balance = 1000
+        self.balance = 1000.0
         self.open_trade = None
 
         self.last_trade_time = 0
         self.cooldown = 60
+
         self.last_direction = None
         self.last_signal = None
 
-        # fallback safety
         self.last_price = None
 
     # ---------------- TELEGRAM ----------------
@@ -26,41 +26,49 @@ class PaperBot:
         try:
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
             requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=10)
-        except Exception as e:
-            print("TELEGRAM ERROR:", e)
+        except:
+            pass
 
-    # ---------------- SAFE PRICE ENGINE ----------------
+    # ---------------- PRICE ENGINE (SAFE + MULTI SOURCE) ----------------
     def get_price(self):
-        try:
-            url = "https://stooq.com/q/l/?s=eurusd&f=sd2t2ohlcv&h&e=json"
-            r = requests.get(url, timeout=10)
 
-            if r.status_code != 200:
-                print("BAD STATUS:", r.status_code)
-                return self.last_price
+        sources = [
+            "https://stooq.com/q/l/?s=eurusd&f=sd2t2ohlcv&h&e=json",
+            "https://api.exchangerate.host/latest?base=EUR&symbols=USD"
+        ]
+
+        for url in sources:
 
             try:
-                data = r.json()
-            except Exception:
-                print("BROKEN JSON → using last price")
-                return self.last_price
+                r = requests.get(url, timeout=10)
 
-            if "symbols" not in data or not data["symbols"]:
-                print("BAD FORMAT → using last price")
-                return self.last_price
+                if r.status_code != 200:
+                    continue
 
-            price = data["symbols"][0].get("close")
+                try:
+                    data = r.json()
+                except:
+                    continue
 
-            if price is None:
-                return self.last_price
+                # SOURCE 1
+                if "symbols" in data:
+                    price = data["symbols"][0].get("close")
+                    if price:
+                        self.last_price = float(price)
+                        return float(price)
 
-            price = float(price)
-            self.last_price = price
-            return price
+                # SOURCE 2
+                if "rates" in data:
+                    price = data["rates"].get("USD")
+                    if price:
+                        self.last_price = float(price)
+                        return float(price)
 
-        except Exception as e:
-            print("PRICE ERROR:", e)
-            return self.last_price
+            except:
+                continue
+
+        # fallback
+        return self.last_price
 
     # ---------------- SIGNAL ENGINE ----------------
     def signal(self, price):
@@ -84,6 +92,7 @@ class PaperBot:
 
         volatility = max(mid) - min(mid)
         avg = sum(mid) / len(mid)
+
         threshold = avg * 0.0003
 
         if volatility < threshold:
@@ -127,11 +136,7 @@ class PaperBot:
         self.last_trade_time = time.time()
         self.last_direction = signal
 
-        self.send(f"""📥 OPEN {signal}
-Price: {price}
-SL: {sl}
-TP: {tp}
-Balance: {self.balance}""")
+        self.send(f"📥 OPEN {signal}\nPrice: {price}\nSL: {sl}\nTP: {tp}\nBalance: {self.balance}")
 
     # ---------------- CLOSE TRADE ----------------
     def close_trade(self, price):
@@ -168,14 +173,12 @@ Balance: {self.balance}""")
 
         self.balance += pnl
 
-        self.send(f"""📤 {result}
-PnL: {round(pnl,5)}
-Balance: {round(self.balance,2)}""")
+        self.send(f"📤 {result}\nPnL: {round(pnl,5)}\nBalance: {round(self.balance,2)}")
 
     # ---------------- MAIN LOOP ----------------
     def run(self):
 
-        print("🔥 BOT STARTED - STABLE SAFE MODE")
+        print("🔥 BOT RUNNING - STABLE MODE")
 
         while True:
 
@@ -190,6 +193,7 @@ Balance: {round(self.balance,2)}""")
 
                 sig = self.signal(price)
 
+                # prevent spam
                 if sig == self.last_signal:
                     time.sleep(5)
                     continue
