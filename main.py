@@ -23,25 +23,25 @@ class PaperBot:
 
     # ---------------- TELEGRAM ----------------
     def send(self, msg):
-    try:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        try:
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
-        r = requests.post(
-            url,
-            data={
-                "chat_id": CHAT_ID,
-                "text": msg
-            },
-            timeout=10
-        )
+            r = requests.post(
+                url,
+                data={
+                    "chat_id": CHAT_ID,
+                    "text": msg
+                },
+                timeout=10
+            )
 
-        print("TELEGRAM STATUS:", r.status_code)
-        print("TELEGRAM RESPONSE:", r.text)
+            print("TELEGRAM STATUS:", r.status_code)
+            print("TELEGRAM RESPONSE:", r.text)
 
-    except Exception as e:
-        print("TELEGRAM ERROR:", e)
-        
-    # ---------------- PRICE ENGINE (SAFE + MULTI SOURCE) ----------------
+        except Exception as e:
+            print("TELEGRAM ERROR:", e)
+
+    # ---------------- PRICE ENGINE ----------------
     def get_price(self):
 
         sources = [
@@ -79,10 +79,9 @@ class PaperBot:
             except:
                 continue
 
-        # fallback
         return self.last_price
 
-    # ---------------- SIGNAL ENGINE ----------------
+    # ---------------- SIGNAL ----------------
     def signal(self, price):
 
         if price is None:
@@ -205,7 +204,6 @@ class PaperBot:
 
                 sig = self.signal(price)
 
-                # prevent spam
                 if sig == self.last_signal:
                     time.sleep(5)
                     continue
