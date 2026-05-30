@@ -9,113 +9,175 @@ CHAT_ID = "8236639818"
 
 BASE_URL = "https://www.alphavantage.co/query"
 
-
 class TradingBot:
 
     def __init__(self):
+
         self.prices = []
-
-        # cooldown system
-        self.last_signal = None
-        self.last_alert_time = 0
-
-        # 15 minutes cooldown
-        self.cooldown_seconds = 900
 
     def send_alert(self, message):
 
         try:
+
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
-            response = requests.post(url, data={
+            requests.post(url, data={
+
                 "chat_id": CHAT_ID,
+
                 "text": message
+
             })
 
-            print("TELEGRAM:", response.status_code)
+        except:
 
-        except Exception as e:
-            print("TELEGRAM ERROR:", e)
+            pass
 
     def get_price(self):
 
         try:
-            response = requests.get(BASE_URL, params={
+
+            r = requests.get(BASE_URL, params={
+
                 "function": "CURRENCY_EXCHANGE_RATE",
+
                 "from_currency": "EUR",
+
                 "to_currency": "USD",
+
                 "apikey": API_KEY
+
             }, timeout=10)
 
-            data = response.json()
+            data = r.json()
 
             block = data.get("Realtime Currency Exchange Rate")
 
             if not block:
+
                 return None
 
             return float(block["5. Exchange Rate"])
 
-        except Exception as e:
-            print("PRICE ERROR:", e)
+        except:
+
             return None
+
+    # ---------------------------
+
+    # RSI CALCULATION
+
+    # ---------------------------
+
+    def calculate_rsi(self, period=10):
+
+        if len(self.prices) < period + 1:
+
+            return 50  # neutral default
+
+        gains = 0
+
+        losses = 0
+
+        for i in range(-period, -1):
+
+            change = self.prices[i] - self.prices[i - 1]
+
+            if change > 0:
+
+                gains += change
+
+            else:
+
+                losses += abs(change)
+
+        if losses == 0:
+
+            return 100
+
+        rs = gains / losses
+
+        rsi = 100 - (100 / (1 + rs))
+
+        return rsi
 
     def analyze(self, price):
 
         if price is None:
-            return "NO TRADE", 0, ["No data"]
+
+            return "NO TRADE", 0, []
 
         self.prices.append(price)
 
         if len(self.prices) > 50:
+
             self.prices.pop(0)
 
         score = 50
+
         reasons = []
 
         # trend
+
         if len(self.prices) > 5:
 
             if self.prices[-1] > self.prices[-5]:
+
                 score += 20
+
                 reasons.append("Uptrend")
 
             else:
+
                 score += 20
+
                 reasons.append("Downtrend")
 
+        # RSI filter
+
+        rsi = self.calculate_rsi()
+
+        reasons.append(f"RSI: {round(rsi,2)}")
+
+        if rsi > 70:
+
+            score -= 25
+
+            reasons.append("Overbought - avoid BUY")
+
+        elif rsi < 30:
+
+            score -= 25
+
+            reasons.append("Oversold - avoid SELL")
+
         # zones
+
         if price > 1.10:
+
             score += 10
+
             reasons.append("Upper zone")
 
         elif price < 1.08:
+
             score += 10
+
             reasons.append("Lower zone")
 
         score = max(0, min(100, score))
 
         if score < 75:
+
             return "NO TRADE", score, reasons
 
         signal = "BUY" if self.prices[-1] > self.prices[-5] else "SELL"
 
         return signal, score, reasons
 
-    def can_send_signal(self, signal):
-
-        now = time.time()
-
-        # cooldown active
-        if signal == self.last_signal:
-            if now - self.last_alert_time < self.cooldown_seconds:
-                return False
-
-        return True
-
     def run(self):
 
-        print("COOLDOWN BOT ONLINE")
+        print("RSI BOT ONLINE")
 
         while True:
 
@@ -124,35 +186,32 @@ class TradingBot:
             signal, score, reasons = self.analyze(price)
 
             print("\nPRICE:", price)
+
             print("SIGNAL:", signal)
+
             print("CONFIDENCE:", score)
 
             if signal != "NO TRADE":
 
-                if self.can_send_signal(signal):
+                msg = f"""
 
-                    message = f"""
-📊 TRADE SIGNAL
+📊 SIGNAL
 
-PAIR: EUR/USD
-SIGNAL: {signal}
-PRICE: {price}
-CONFIDENCE: {score}
+EUR/USD
 
-REASONS:
+{signal}
+
+Price: {price}
+
+Confidence: {score}
+
 {chr(10).join(reasons)}
+
 """
 
-                    self.send_alert(message)
-
-                    self.last_signal = signal
-                    self.last_alert_time = time.time()
-
-                else:
-                    print("⏳ SIGNAL COOLDOWN ACTIVE")
+                self.send_alert(msg)
 
             time.sleep(20)
-
 
 bot = TradingBot()
 bot.run()
