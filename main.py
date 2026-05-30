@@ -28,38 +28,37 @@ class PaperBot:
 
             r = requests.post(
                 url,
-                data={
-                    "chat_id": CHAT_ID,
-                    "text": msg
-                },
+                data={"chat_id": CHAT_ID, "text": msg},
                 timeout=10
             )
 
-            print("TELEGRAM STATUS:", r.status_code)
-            print("TELEGRAM RESPONSE:", r.text)
+            print("TELEGRAM:", r.status_code, r.text)
 
         except Exception as e:
             print("TELEGRAM ERROR:", e)
 
-    # ---------------- PRICE ENGINE ----------------
+    # ---------------- PRICE ENGINE (FIXED + STABLE) ----------------
     def get_price(self):
 
-    try:
-        url = "https://api.fxratesapi.com/latest?base=EUR&currencies=USD"
-        r = requests.get(url, timeout=10)
+        try:
+            # stable FX endpoint
+            url = "https://api.fxratesapi.com/latest?base=EUR&currencies=USD"
+            r = requests.get(url, timeout=10)
 
-        data = r.json()
+            data = r.json()
 
-        price = data["rates"]["USD"]
+            price = data["rates"]["USD"]
 
-        self.last_price = float(price)
-        return float(price)
+            self.last_price = float(price)
+            return float(price)
 
-    except Exception as e:
-        print("PRICE ERROR:", e)
-        return self.last_price
+        except Exception as e:
+            print("PRICE ERROR:", e)
 
-    # ---------------- SIGNAL ----------------
+            # fallback to last known price
+            return self.last_price
+
+    # ---------------- SIGNAL ENGINE ----------------
     def signal(self, price):
 
         if price is None:
@@ -176,7 +175,7 @@ class PaperBot:
                 price = self.get_price()
 
                 if price is None:
-                    print("NO PRICE → waiting")
+                    print("NO PRICE → waiting fallback active")
                     time.sleep(5)
                     continue
 
@@ -207,7 +206,5 @@ class PaperBot:
 # ---------------- START ----------------
 if __name__ == "__main__":
     bot = PaperBot()
-
     bot.send("✅ BOT STARTED")
-
     bot.run()
