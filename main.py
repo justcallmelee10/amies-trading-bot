@@ -21,8 +21,6 @@ class PaperBot:
 
         self.trade_log = []
 
-        # controls
-
         self.last_trade_time = 0
 
         self.cooldown = 90
@@ -49,17 +47,25 @@ class PaperBot:
 
         try:
 
-            r = requests.get(BASE_URL, params={
+            r = requests.get(
 
-                "function": "CURRENCY_EXCHANGE_RATE",
+                BASE_URL,
 
-                "from_currency": "EUR",
+                params={
 
-                "to_currency": "USD",
+                    "function": "CURRENCY_EXCHANGE_RATE",
 
-                "apikey": API_KEY
+                    "from_currency": "EUR",
 
-            }, timeout=10)
+                    "to_currency": "USD",
+
+                    "apikey": API_KEY
+
+                },
+
+                timeout=10
+
+            )
 
             data = r.json()
 
@@ -75,29 +81,43 @@ class PaperBot:
 
             return None
 
-    # ---------------- SIGNAL ----------------
+    # ---------------- SIGNAL (FIXED, REALISTIC) ----------------
 
     def signal(self, price):
 
         self.prices.append(price)
 
-        if len(self.prices) > 40:
+        if len(self.prices) > 60:
 
             self.prices.pop(0)
 
-        if len(self.prices) < 6:
+        if len(self.prices) < 10:
 
             return "NO TRADE"
 
-        # softer volatility filter (balanced)
+        window = self.prices[-8:]
 
-        recent_range = max(self.prices[-8:]) - min(self.prices[-8:])
+        recent_range = max(window) - min(window)
 
-        if recent_range < 0.0008:
+        # FIX: realistic adaptive threshold (prevents permanent NO TRADE)
 
-            return "NO TRADE"
+        avg_price = sum(window) / len(window)
 
-        # faster trend detection
+        threshold = avg_price * 0.0002
+
+        if recent_range < threshold:
+
+            # fallback logic instead of freezing
+
+            if self.prices[-1] > self.prices[-3]:
+
+                return "BUY"
+
+            else:
+
+                return "SELL"
+
+        # trend logic
 
         if self.prices[-1] > self.prices[-5]:
 
@@ -161,17 +181,11 @@ class PaperBot:
 
         self.last_direction = signal
 
-        self.send(f"""
+        self.send(
 
-📥 OPEN {signal}
+            f"📥 OPEN {signal}\nEntry: {price}\nSL: {sl}\nTP: {tp}"
 
-Entry: {price}
-
-SL: {round(sl,5)}
-
-TP: {round(tp,5)}
-
-""")
+        )
 
     # ---------------- CLOSE TRADE ----------------
 
@@ -233,15 +247,11 @@ TP: {round(tp,5)}
 
         self.trade_log.append(pnl)
 
-        self.send(f"""
+        self.send(
 
-📤 CLOSED ({result})
+            f"📤 CLOSE ({result})\nPnL: {round(pnl,5)}\nBalance: {round(self.balance,2)}"
 
-PnL: {round(pnl,5)}
-
-Balance: {round(self.balance,2)}
-
-""")
+        )
 
     # ---------------- STATS ----------------
 
@@ -259,21 +269,11 @@ Balance: {round(self.balance,2)}
 
         total_pnl = sum(self.trade_log)
 
-        self.send(f"""
+        self.send(
 
-📊 STATS
+            f"📊 STATS\nTrades: {total}\nWins: {wins}\nWinrate: {round(winrate,2)}%\nPnL: {round(total_pnl,4)}\nBalance: {round(self.balance,2)}"
 
-Trades: {total}
-
-Wins: {wins}
-
-Winrate: {round(winrate,2)}%
-
-PnL: {round(total_pnl,4)}
-
-Balance: {round(self.balance,2)}
-
-""")
+        )
 
     # ---------------- MAIN LOOP ----------------
 
@@ -297,21 +297,15 @@ Balance: {round(self.balance,2)}
 
             print("PRICE:", price, "SIGNAL:", sig)
 
-            # OPEN
-
             if self.open_trade is None:
 
                 if sig != "NO TRADE" and self.can_trade(sig):
 
                     self.open_trade_fn(sig, price)
 
-            # CLOSE (SL/TP check every cycle)
-
-            elif self.open_trade is not None:
+            else:
 
                 self.close_trade(price)
-
-            # STATS
 
             if time.time() - last_stats > 300:
 
