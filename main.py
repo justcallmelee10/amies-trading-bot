@@ -18,6 +18,9 @@ class PaperBot:
         self.last_direction = None
         self.last_signal = None
 
+        # fallback safety
+        self.last_price = None
+
     # ---------------- TELEGRAM ----------------
     def send(self, msg):
         try:
@@ -26,48 +29,44 @@ class PaperBot:
         except Exception as e:
             print("TELEGRAM ERROR:", e)
 
-    # ---------------- SAFE PRICE FEED ----------------
+    # ---------------- SAFE PRICE ENGINE ----------------
     def get_price(self):
-
-    try:
-        url = "https://stooq.com/q/l/?s=eurusd&f=sd2t2ohlcv&h&e=json"
-        r = requests.get(url, timeout=10)
-
-        # must be valid response
-        if r.status_code != 200:
-            print("BAD STATUS:", r.status_code)
-            return getattr(self, "last_price", None)
-
         try:
-            data = r.json()
-        except Exception:
-            print("BROKEN JSON, USING LAST PRICE")
-            return getattr(self, "last_price", None)
+            url = "https://stooq.com/q/l/?s=eurusd&f=sd2t2ohlcv&h&e=json"
+            r = requests.get(url, timeout=10)
 
-        symbols = data.get("symbols")
+            if r.status_code != 200:
+                print("BAD STATUS:", r.status_code)
+                return self.last_price
 
-        if not symbols or "close" not in symbols[0]:
-            print("BAD STRUCTURE:", data)
-            return getattr(self, "last_price", None)
+            try:
+                data = r.json()
+            except Exception:
+                print("BROKEN JSON → using last price")
+                return self.last_price
 
-        price = symbols[0]["close"]
+            if "symbols" not in data or not data["symbols"]:
+                print("BAD FORMAT → using last price")
+                return self.last_price
 
-        if price is None:
-            return getattr(self, "last_price", None)
+            price = data["symbols"][0].get("close")
 
-        price = float(price)
+            if price is None:
+                return self.last_price
 
-        # store last good price
-        self.last_price = price
+            price = float(price)
+            self.last_price = price
+            return price
 
-        return price
+        except Exception as e:
+            print("PRICE ERROR:", e)
+            return self.last_price
 
-    except Exception as e:
-        print("PRICE ERROR:", e)
-        return getattr(self, "last_price", None)
-        
     # ---------------- SIGNAL ENGINE ----------------
     def signal(self, price):
+
+        if price is None:
+            return "NO TRADE"
 
         self.prices.append(price)
 
@@ -176,7 +175,7 @@ Balance: {round(self.balance,2)}""")
     # ---------------- MAIN LOOP ----------------
     def run(self):
 
-        print("🔥 BOT STARTED - STABLE MODE")
+        print("🔥 BOT STARTED - STABLE SAFE MODE")
 
         while True:
 
@@ -185,6 +184,7 @@ Balance: {round(self.balance,2)}""")
                 price = self.get_price()
 
                 if price is None:
+                    print("NO PRICE → waiting")
                     time.sleep(5)
                     continue
 
@@ -195,6 +195,8 @@ Balance: {round(self.balance,2)}""")
                     continue
 
                 self.last_signal = sig
+
+                print("PRICE:", price, "SIGNAL:", sig)
 
                 if self.open_trade is None:
                     if sig != "NO TRADE" and self.can_trade(sig):
@@ -210,7 +212,7 @@ Balance: {round(self.balance,2)}""")
                 time.sleep(5)
 
 
-# ---------------- START BOT ----------------
+# ---------------- START ----------------
 if __name__ == "__main__":
     bot = PaperBot()
     bot.run()
