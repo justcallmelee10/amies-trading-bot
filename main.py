@@ -18,7 +18,6 @@ class PaperBot:
         self.last_trade_time = 0
         self.cooldown = 60
 
-        self.last_signal = None
         self.last_direction = None
 
     # ---------------- TELEGRAM ----------------
@@ -32,7 +31,7 @@ class PaperBot:
         except:
             pass
 
-    # ---------------- PRICE (STABLE) ----------------
+    # ---------------- PRICE ----------------
     def get_price(self):
 
         try:
@@ -42,12 +41,9 @@ class PaperBot:
             )
 
             data = r.json()
+            price = data.get("rates", {}).get("USD")
 
-            rates = data.get("rates", {})
-
-            price = rates.get("USD")
-
-            if price is not None:
+            if price:
                 self.last_price = float(price)
                 return float(price)
 
@@ -56,41 +52,48 @@ class PaperBot:
 
         return self.last_price
 
-    # ---------------- SIGNAL ENGINE ----------------
+    # ---------------- STRATEGY (UPGRADED) ----------------
     def signal(self, price):
-
-        if price is None:
-            return "NO TRADE"
 
         self.prices.append(price)
 
-        if len(self.prices) > 50:
+        if len(self.prices) > 80:
             self.prices.pop(0)
 
-        if len(self.prices) < 10:
+        if len(self.prices) < 20:
             return "NO TRADE"
 
-        short = self.prices[-3:]
-        mid = self.prices[-8:]
+        # ---------------- LAYER 1: TREND ----------------
+        fast = sum(self.prices[-5:]) / 5
+        slow = sum(self.prices[-20:]) / 20
 
-        short_trend = short[-1] - short[0]
-        mid_trend = mid[-1] - mid[0]
+        trend_up = fast > slow
+        trend_down = fast < slow
 
-        volatility = max(mid) - min(mid)
-        avg = sum(mid) / len(mid)
+        # ---------------- LAYER 2: MOMENTUM ----------------
+        momentum = self.prices[-1] - self.prices[-5]
 
-        if volatility < avg * 0.0003:
+        strong_momentum = abs(momentum) > (price * 0.0002)
+
+        # ---------------- LAYER 3: VOLATILITY FILTER ----------------
+        recent = self.prices[-10:]
+        volatility = max(recent) - min(recent)
+
+        low_noise = volatility > price * 0.0003
+
+        # ---------------- DECISION LOGIC ----------------
+        if not strong_momentum or not low_noise:
             return "NO TRADE"
 
-        if short_trend > 0 and mid_trend > 0:
+        if trend_up and momentum > 0:
             return "BUY"
 
-        if short_trend < 0 and mid_trend < 0:
+        if trend_down and momentum < 0:
             return "SELL"
 
         return "NO TRADE"
 
-    # ---------------- TRADE RULES ----------------
+    # ---------------- RISK CONTROL ----------------
     def can_trade(self, signal):
 
         now = time.time()
@@ -106,8 +109,8 @@ class PaperBot:
     # ---------------- OPEN TRADE ----------------
     def open_trade_fn(self, signal, price):
 
-        sl = price - 0.0010 if signal == "BUY" else price + 0.0010
-        tp = price + 0.0020 if signal == "BUY" else price - 0.0020
+        sl = price * (0.999) if signal == "BUY" else price * (1.001)
+        tp = price * (1.002) if signal == "BUY" else price * (0.998)
 
         self.open_trade = {
             "type": signal,
@@ -121,17 +124,17 @@ class PaperBot:
         self.last_direction = signal
 
         self.send(
-            f"📥 OPEN {signal}\nPrice: {price}\nSL: {sl}\nTP: {tp}\nBalance: {self.balance}"
+            f"📥 STRATEGY ENTRY {signal}\nPrice: {price}\nSL: {sl}\nTP: {tp}\nBalance: {self.balance}"
         )
 
     # ---------------- CLOSE TRADE ----------------
     def close_trade(self, price):
 
-        trade = self.open_trade
+        t = self.open_trade
         self.open_trade = None
 
-        entry = trade["entry"]
-        side = trade["type"]
+        entry = t["entry"]
+        side = t["type"]
 
         if side == "BUY":
             pnl = price - entry
@@ -141,17 +144,18 @@ class PaperBot:
         self.balance += pnl
 
         self.send(
-            f"📤 CLOSE {side}\nPnL: {round(pnl,5)}\nBalance: {round(self.balance,2)}"
+            f"📤 EXIT {side}\nPnL: {round(pnl,5)}\nBalance: {round(self.balance,2)}"
         )
 
     # ---------------- MAIN LOOP ----------------
     def run(self):
 
-        self.send("✅ BOT STARTED")
+        self.send("✅ UPGRADED STRATEGY BOT STARTED")
 
         while True:
 
             try:
+
                 price = self.get_price()
 
                 print("PRICE:", price)
@@ -165,10 +169,8 @@ class PaperBot:
                 print("SIGNAL:", sig)
 
                 if self.open_trade is None:
-
                     if sig != "NO TRADE" and self.can_trade(sig):
                         self.open_trade_fn(sig, price)
-
                 else:
                     self.close_trade(price)
 
@@ -179,6 +181,5 @@ class PaperBot:
                 time.sleep(3)
 
 
-# ---------------- START ----------------
 if __name__ == "__main__":
     PaperBot().run()
