@@ -44,41 +44,19 @@ class PaperBot:
     # ---------------- PRICE ENGINE ----------------
     def get_price(self):
 
-        sources = [
-            "https://stooq.com/q/l/?s=eurusd&f=sd2t2ohlcv&h&e=json",
-            "https://api.exchangerate.host/latest?base=EUR&symbols=USD"
-        ]
+    try:
+        url = "https://api.fxratesapi.com/latest?base=EUR&currencies=USD"
+        r = requests.get(url, timeout=10)
 
-        for url in sources:
+        data = r.json()
 
-            try:
-                r = requests.get(url, timeout=10)
+        price = data["rates"]["USD"]
 
-                if r.status_code != 200:
-                    continue
+        self.last_price = float(price)
+        return float(price)
 
-                try:
-                    data = r.json()
-                except:
-                    continue
-
-                # SOURCE 1
-                if "symbols" in data:
-                    price = data["symbols"][0].get("close")
-                    if price:
-                        self.last_price = float(price)
-                        return float(price)
-
-                # SOURCE 2
-                if "rates" in data:
-                    price = data["rates"].get("USD")
-                    if price:
-                        self.last_price = float(price)
-                        return float(price)
-
-            except:
-                continue
-
+    except Exception as e:
+        print("PRICE ERROR:", e)
         return self.last_price
 
     # ---------------- SIGNAL ----------------
