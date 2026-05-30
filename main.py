@@ -35,7 +35,7 @@ class PaperBot:
 
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
-            requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
+            requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=10)
 
         except:
 
@@ -73,7 +73,7 @@ class PaperBot:
 
             return None
 
-    # ---------------- SIGNAL (OBSERVABLE VERSION) ----------------
+    # ---------------- SIGNAL ----------------
 
     def signal(self, price):
 
@@ -85,15 +85,7 @@ class PaperBot:
 
         if len(self.prices) < 15:
 
-            return {
-
-                "signal": "NO TRADE",
-
-                "reason": "INSUFFICIENT DATA",
-
-                "volatility": 0
-
-            }
+            return "NO TRADE"
 
         short = self.prices[-3:]
 
@@ -109,57 +101,19 @@ class PaperBot:
 
         threshold = avg * 0.00025
 
-        # ---------------- FILTER 1 ----------------
-
         if volatility < threshold:
 
-            return {
-
-                "signal": "NO TRADE",
-
-                "reason": "LOW VOLATILITY (FLAT MARKET)",
-
-                "volatility": volatility
-
-            }
-
-        # ---------------- FILTER 2 ----------------
+            return "NO TRADE"
 
         if short_trend > 0 and mid_trend > 0:
 
-            return {
-
-                "signal": "BUY",
-
-                "reason": "MOMENTUM UP (SHORT + MID ALIGN)",
-
-                "volatility": volatility
-
-            }
+            return "BUY"
 
         if short_trend < 0 and mid_trend < 0:
 
-            return {
+            return "SELL"
 
-                "signal": "SELL",
-
-                "reason": "MOMENTUM DOWN (SHORT + MID ALIGN)",
-
-                "volatility": volatility
-
-            }
-
-        # ---------------- FILTER 3 ----------------
-
-        return {
-
-            "signal": "NO TRADE",
-
-            "reason": "CHOPPY / NO CLEAR TREND",
-
-            "volatility": volatility
-
-        }
+        return "NO TRADE"
 
     # ---------------- CAN TRADE ----------------
 
@@ -203,17 +157,13 @@ class PaperBot:
 
         self.last_direction = signal
 
-        self.send(f"""
-
-📥 OPEN {signal}
-
-Entry: {price}
+        self.send(f"""📥 {signal} @ {price}
 
 SL: {sl}
 
 TP: {tp}
 
-""")
+BALANCE: {self.balance}""")
 
     # ---------------- CLOSE TRADE ----------------
 
@@ -237,13 +187,13 @@ TP: {tp}
 
                 pnl = -abs(entry - sl)
 
-                result = "STOP LOSS"
+                result = "SL HIT"
 
             elif price >= tp:
 
                 pnl = abs(tp - entry)
 
-                result = "TAKE PROFIT"
+                result = "TP HIT"
 
             else:
 
@@ -257,13 +207,13 @@ TP: {tp}
 
                 pnl = -abs(sl - entry)
 
-                result = "STOP LOSS"
+                result = "SL HIT"
 
             elif price <= tp:
 
                 pnl = abs(entry - tp)
 
-                result = "TAKE PROFIT"
+                result = "TP HIT"
 
             else:
 
@@ -275,21 +225,17 @@ TP: {tp}
 
         self.trade_log.append(pnl)
 
-        self.send(f"""
-
-📤 CLOSE ({result})
+        self.send(f"""📤 CLOSE ({result})
 
 PnL: {round(pnl,5)}
 
-Balance: {round(self.balance,2)}
+BALANCE: {round(self.balance,2)}""")
 
-""")
-
-    # ---------------- MAIN LOOP (OBSERVABLE LOGS) ----------------
+    # ---------------- MAIN LOOP ----------------
 
     def run(self):
 
-        print("BOT RUNNING (OBSERVABLE MODE)")
+        print("BOT RUNNING (CLEAN MODE)")
 
         while True:
 
@@ -301,27 +247,17 @@ Balance: {round(self.balance,2)}
 
                 continue
 
-            result = self.signal(price)
+            sig = self.signal(price)
 
-            sig = result["signal"]
+            print(f"PRICE: {price} | SIGNAL: {sig}")
 
-            reason = result["reason"]
+            # TELEGRAM UPDATE (CLEAN)
 
-            vol = result["volatility"]
-
-            print(f"""
-
-PRICE: {price}
+            self.send(f"""PRICE: {price}
 
 SIGNAL: {sig}
 
-REASON: {reason}
-
-VOLATILITY: {vol}
-
---------------------
-
-""")
+BALANCE: {self.balance}""")
 
             if self.open_trade is None:
 
