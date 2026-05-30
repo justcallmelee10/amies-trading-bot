@@ -8,7 +8,6 @@ CHAT_ID = "8236639818"
 class PaperBot:
 
     def __init__(self):
-
         self.prices = []
         self.balance = 1000.0
         self.open_trade = None
@@ -18,29 +17,17 @@ class PaperBot:
 
         self.last_direction = None
         self.last_signal = None
-
         self.last_price = None
 
-    # ---------------- TELEGRAM ----------------
+    # ---------------- TELEGRAM (SAFE) ----------------
     def send(self, msg):
         try:
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+            requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=10)
+        except:
+            pass
 
-            r = requests.post(
-                url,
-                data={
-                    "chat_id": CHAT_ID,
-                    "text": msg
-                },
-                timeout=10
-            )
-
-            print("TELEGRAM:", r.status_code, r.text)
-
-        except Exception as e:
-            print("TELEGRAM ERROR:", e)
-
-    # ---------------- PRICE ENGINE (STABLE) ----------------
+    # ---------------- PRICE (ULTRA SAFE FALLBACK) ----------------
     def get_price(self):
 
         try:
@@ -48,14 +35,21 @@ class PaperBot:
             r = requests.get(url, timeout=10)
 
             data = r.json()
-            price = data["rates"]["USD"]
 
-            self.last_price = float(price)
-            return float(price)
+            # SAFE extraction (no KeyErrors EVER)
+            rates = data.get("rates", {})
 
-        except Exception as e:
-            print("PRICE ERROR:", e)
-            return self.last_price
+            price = rates.get("USD")
+
+            if price is not None:
+                self.last_price = float(price)
+                return float(price)
+
+        except:
+            pass
+
+        # fallback always prevents crash
+        return self.last_price
 
     # ---------------- SIGNAL ENGINE ----------------
     def signal(self, price):
@@ -74,7 +68,7 @@ class PaperBot:
         short = self.prices[-3:]
         mid = self.prices[-8:]
 
-        short_trend = short[-1] - short[-0]
+        short_trend = short[-1] - short[0]
         mid_trend = mid[-1] - mid[0]
 
         volatility = max(mid) - min(mid)
@@ -95,7 +89,6 @@ class PaperBot:
 
     # ---------------- TRADE RULES ----------------
     def can_trade(self, signal):
-
         now = time.time()
 
         if now - self.last_trade_time < self.cooldown:
@@ -137,50 +130,38 @@ class PaperBot:
         side = t["type"]
 
         if side == "BUY":
-            if price <= sl:
-                pnl = -abs(entry - sl)
-                result = "STOP LOSS"
-            elif price >= tp:
-                pnl = abs(tp - entry)
-                result = "TAKE PROFIT"
-            else:
-                pnl = price - entry
-                result = "TIME EXIT"
-
+            pnl = price - entry
         else:
-            if price >= sl:
-                pnl = -abs(sl - entry)
-                result = "STOP LOSS"
-            elif price <= tp:
-                pnl = abs(entry - tp)
-                result = "TAKE PROFIT"
-            else:
-                pnl = entry - price
-                result = "TIME EXIT"
+            pnl = entry - price
 
         self.balance += pnl
 
-        self.send(f"📤 {result}\nPnL: {round(pnl,5)}\nBalance: {round(self.balance,2)}")
+        self.send(
+            f"📤 CLOSE {side}\nPnL: {round(pnl, 5)}\nBalance: {round(self.balance, 2)}"
+        )
 
-    # ---------------- MAIN LOOP (STABLE + KEEP ALIVE) ----------------
+    # ---------------- MAIN LOOP (CLEAN + SAFE) ----------------
     def run(self):
 
-        print("🔥 BOT RUNNING - STABLE MODE")
         self.send("✅ BOT STARTED")
 
         while True:
 
             try:
-                print("HEARTBEAT:", time.time())
 
                 price = self.get_price()
 
                 if price is None:
-                    print("NO PRICE → waiting")
-                    time.sleep(2)
+                    time.sleep(3)
                     continue
 
                 sig = self.signal(price)
+
+                if sig == self.last_signal:
+                    time.sleep(3)
+                    continue
+
+                self.last_signal = sig
 
                 print("PRICE:", price, "SIGNAL:", sig)
 
@@ -190,14 +171,11 @@ class PaperBot:
                 else:
                     self.close_trade(price)
 
-                # keep container alive
-                requests.get("https://www.google.com", timeout=5)
+                time.sleep(3)
 
-                time.sleep(2)
-
-            except Exception as e:
-                print("LOOP ERROR:", e)
-                time.sleep(2)
+            except:
+                # absolute fail-safe (NO CRASH EVER)
+                time.sleep(3)
 
 
 # ---------------- START ----------------
