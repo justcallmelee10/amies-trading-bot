@@ -23,43 +23,41 @@ class PaperBot:
         try:
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
             requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=10)
-        except:
-            pass
+        except Exception as e:
+            print("TELEGRAM ERROR:", e)
 
-    # ---------------- SAFE PRICE FETCH (NO CRASH) ----------------
+    # ---------------- SAFE PRICE FEED ----------------
     def get_price(self):
-    try:
-        url = "https://stooq.com/q/l/?s=eurusd&f=sd2t2ohlcv&h&e=json"
-        r = requests.get(url, timeout=10)
+        try:
+            url = "https://stooq.com/q/l/?s=eurusd&f=sd2t2ohlcv&h&e=json"
+            r = requests.get(url, timeout=10)
 
-        if r.status_code != 200:
-            print("BAD STATUS:", r.status_code)
+            if r.status_code != 200:
+                print("BAD STATUS:", r.status_code)
+                return None
+
+            # SAFE JSON PARSING
+            try:
+                data = r.json()
+            except Exception:
+                print("RAW RESPONSE (NOT JSON):", r.text[:200])
+                return None
+
+            if "symbols" not in data or not data["symbols"]:
+                print("BAD RESPONSE FORMAT:", data)
+                return None
+
+            price = data["symbols"][0].get("close")
+
+            if price is None:
+                return None
+
+            return float(price)
+
+        except Exception as e:
+            print("PRICE ERROR:", e)
             return None
 
-        text = r.text.strip()
-
-        # 🔥 safety check: must look like valid JSON
-        if not text.startswith("{") or not text.endswith("}"):
-            print("INVALID RESPONSE:", text[:200])
-            return None
-
-        data = r.json()
-
-        symbols = data.get("symbols")
-        if not symbols or len(symbols) == 0:
-            print("NO SYMBOL DATA:", data)
-            return None
-
-        price = symbols[0].get("close")
-
-        if price is None:
-            return None
-
-        return float(price)
-
-    except Exception as e:
-        print("PRICE ERROR:", e)
-        return None
     # ---------------- SIGNAL ENGINE ----------------
     def signal(self, price):
 
@@ -170,7 +168,7 @@ Balance: {round(self.balance,2)}""")
     # ---------------- MAIN LOOP ----------------
     def run(self):
 
-        print("🔥 BOT STARTED - CRASH SAFE MODE")
+        print("🔥 BOT STARTED - STABLE MODE")
 
         while True:
 
@@ -179,13 +177,13 @@ Balance: {round(self.balance,2)}""")
                 price = self.get_price()
 
                 if price is None:
-                    time.sleep(10)
+                    time.sleep(5)
                     continue
 
                 sig = self.signal(price)
 
                 if sig == self.last_signal:
-                    time.sleep(10)
+                    time.sleep(5)
                     continue
 
                 self.last_signal = sig
@@ -197,13 +195,14 @@ Balance: {round(self.balance,2)}""")
                 else:
                     self.close_trade(price)
 
-                time.sleep(10)
+                time.sleep(5)
 
             except Exception as e:
                 print("LOOP ERROR:", e)
-                time.sleep(10)
+                time.sleep(5)
 
 
+# ---------------- START BOT ----------------
 if __name__ == "__main__":
     bot = PaperBot()
     bot.run()
