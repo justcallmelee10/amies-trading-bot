@@ -73,7 +73,7 @@ class PaperBot:
 
             return None
 
-    # ---------------- STRATEGY (OPTIMIZED) ----------------
+    # ---------------- SIGNAL (OBSERVABLE VERSION) ----------------
 
     def signal(self, price):
 
@@ -85,15 +85,19 @@ class PaperBot:
 
         if len(self.prices) < 15:
 
-            return "NO TRADE"
+            return {
 
-        # ---------------- MOMENTUM ----------------
+                "signal": "NO TRADE",
+
+                "reason": "INSUFFICIENT DATA",
+
+                "volatility": 0
+
+            }
 
         short = self.prices[-3:]
 
         mid = self.prices[-8:]
-
-        long = self.prices[-15:]
 
         short_trend = short[-1] - short[0]
 
@@ -103,29 +107,59 @@ class PaperBot:
 
         avg = sum(mid) / len(mid)
 
-        # dynamic threshold (removes flat-market noise issue)
-
         threshold = avg * 0.00025
 
-        # ---------------- FILTER 1: MARKET ACTIVITY ----------------
+        # ---------------- FILTER 1 ----------------
 
         if volatility < threshold:
 
-            return "NO TRADE"
+            return {
 
-        # ---------------- FILTER 2: MOMENTUM ALIGNMENT ----------------
+                "signal": "NO TRADE",
+
+                "reason": "LOW VOLATILITY (FLAT MARKET)",
+
+                "volatility": volatility
+
+            }
+
+        # ---------------- FILTER 2 ----------------
 
         if short_trend > 0 and mid_trend > 0:
 
-            return "BUY"
+            return {
+
+                "signal": "BUY",
+
+                "reason": "MOMENTUM UP (SHORT + MID ALIGN)",
+
+                "volatility": volatility
+
+            }
 
         if short_trend < 0 and mid_trend < 0:
 
-            return "SELL"
+            return {
 
-        # ---------------- FILTER 3: WEAK / CHOPPY MARKET ----------------
+                "signal": "SELL",
 
-        return "NO TRADE"
+                "reason": "MOMENTUM DOWN (SHORT + MID ALIGN)",
+
+                "volatility": volatility
+
+            }
+
+        # ---------------- FILTER 3 ----------------
+
+        return {
+
+            "signal": "NO TRADE",
+
+            "reason": "CHOPPY / NO CLEAR TREND",
+
+            "volatility": volatility
+
+        }
 
     # ---------------- CAN TRADE ----------------
 
@@ -169,7 +203,17 @@ class PaperBot:
 
         self.last_direction = signal
 
-        self.send(f"📥 OPEN {signal}\nEntry: {price}\nSL: {sl}\nTP: {tp}")
+        self.send(f"""
+
+📥 OPEN {signal}
+
+Entry: {price}
+
+SL: {sl}
+
+TP: {tp}
+
+""")
 
     # ---------------- CLOSE TRADE ----------------
 
@@ -231,15 +275,21 @@ class PaperBot:
 
         self.trade_log.append(pnl)
 
-        self.send(f"📤 CLOSE ({result})\nPnL: {round(pnl,5)}\nBalance: {round(self.balance,2)}")
+        self.send(f"""
 
-    # ---------------- MAIN LOOP ----------------
+📤 CLOSE ({result})
+
+PnL: {round(pnl,5)}
+
+Balance: {round(self.balance,2)}
+
+""")
+
+    # ---------------- MAIN LOOP (OBSERVABLE LOGS) ----------------
 
     def run(self):
 
-        print("BOT RUNNING (OPTIMIZED STRATEGY)")
-
-        last_stats = time.time()
+        print("BOT RUNNING (OBSERVABLE MODE)")
 
         while True:
 
@@ -251,9 +301,27 @@ class PaperBot:
 
                 continue
 
-            sig = self.signal(price)
+            result = self.signal(price)
 
-            print("PRICE:", price, "SIGNAL:", sig)
+            sig = result["signal"]
+
+            reason = result["reason"]
+
+            vol = result["volatility"]
+
+            print(f"""
+
+PRICE: {price}
+
+SIGNAL: {sig}
+
+REASON: {reason}
+
+VOLATILITY: {vol}
+
+--------------------
+
+""")
 
             if self.open_trade is None:
 
@@ -264,28 +332,6 @@ class PaperBot:
             else:
 
                 self.close_trade(price)
-
-            if time.time() - last_stats > 300:
-
-                if len(self.trade_log) > 0:
-
-                    wins = len([x for x in self.trade_log if x > 0])
-
-                    winrate = (wins / len(self.trade_log)) * 100
-
-                    self.send(f"""
-
-📊 STATS
-
-Trades: {len(self.trade_log)}
-
-Winrate: {round(winrate,2)}%
-
-Balance: {round(self.balance,2)}
-
-""")
-
-                last_stats = time.time()
 
             time.sleep(5)
 
