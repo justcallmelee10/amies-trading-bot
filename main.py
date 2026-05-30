@@ -20,8 +20,6 @@ class PaperBot:
         self.last_trade_time = 0
         self.cooldown = 90
         self.last_direction = None
-
-        # 🔥 prevents spam + duplicate signals
         self.last_signal = None
 
     # ---------------- TELEGRAM ----------------
@@ -161,7 +159,7 @@ Balance: {self.balance}""")
 PnL: {round(pnl,5)}
 Balance: {round(self.balance,2)}""")
 
-    # ---------------- MAIN LOOP (CLEAN MODE) ----------------
+    # ---------------- MAIN LOOP ----------------
     def run(self):
 
         print("BOT RUNNING - CLEAN TRADER MODE")
@@ -178,7 +176,7 @@ Balance: {round(self.balance,2)}""")
 
                 sig = self.signal(price)
 
-                # 🔥 ONLY ACT ON NEW SIGNALS
+                # prevent spam signals
                 if sig == self.last_signal:
                     time.sleep(5)
                     continue
@@ -201,6 +199,7 @@ Balance: {round(self.balance,2)}""")
                 time.sleep(5)
 
 
+# ---------------- START BOT ----------------
 if __name__ == "__main__":
     bot = PaperBot()
     bot.run()
