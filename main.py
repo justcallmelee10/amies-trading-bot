@@ -9,33 +9,27 @@ CHAT_ID = "8236639818"
 
 BASE_URL = "https://www.alphavantage.co/query"
 
-class PerformanceBot:
+class PaperBot:
 
     def __init__(self):
 
         self.prices = []
 
-        self.open_trade = None
-
         self.balance = 1000
+
+        self.open_trade = None
 
         self.trade_log = []
 
     # ---------------- TELEGRAM ----------------
 
-    def send_alert(self, message):
+    def send(self, msg):
 
         try:
 
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
-            requests.post(url, data={
-
-                "chat_id": CHAT_ID,
-
-                "text": message
-
-            })
+            requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
         except:
 
@@ -75,7 +69,7 @@ class PerformanceBot:
 
     # ---------------- SIGNAL ----------------
 
-    def analyze(self, price):
+    def signal(self, price):
 
         self.prices.append(price)
 
@@ -83,33 +77,25 @@ class PerformanceBot:
 
             self.prices.pop(0)
 
-        score = 50
+        if len(self.prices) < 6:
 
-        if len(self.prices) > 5:
+            return "NO TRADE"
 
-            if self.prices[-1] > self.prices[-5]:
+        if self.prices[-1] > self.prices[-5]:
 
-                score += 20
+            return "BUY"
 
-            else:
+        else:
 
-                score += 20
+            return "SELL"
 
-        if score < 75:
+    # ---------------- TRADE OPEN ----------------
 
-            return "NO TRADE", score
-
-        signal = "BUY" if self.prices[-1] > self.prices[-5] else "SELL"
-
-        return signal, score
-
-    # ---------------- TRADE ----------------
-
-    def open_trade(self, signal, price):
+    def open(self, signal, price):
 
         self.open_trade = {
 
-            "signal": signal,
+            "type": signal,
 
             "entry": price,
 
@@ -117,19 +103,21 @@ class PerformanceBot:
 
         }
 
-        self.send_alert(f"OPEN {signal} @ {price}")
+        self.send(f"📥 OPEN {signal} @ {price}")
 
-    def close_trade(self, price):
+    # ---------------- TRADE CLOSE ----------------
 
-        trade = self.open_trade
+    def close(self, price):
+
+        t = self.open_trade
 
         self.open_trade = None
 
-        entry = trade["entry"]
+        entry = t["entry"]
 
-        signal = trade["signal"]
+        side = t["type"]
 
-        pnl = (price - entry) if signal == "BUY" else (entry - price)
+        pnl = (price - entry) if side == "BUY" else (entry - price)
 
         self.balance += pnl
 
@@ -137,11 +125,21 @@ class PerformanceBot:
 
         result = "WIN" if pnl > 0 else "LOSS"
 
-        self.send_alert(f"CLOSE {result} | PnL {round(pnl,5)} | BAL {round(self.balance,2)}")
+        self.send(f"""
+
+📤 CLOSE TRADE
+
+Result: {result}
+
+PnL: {round(pnl,5)}
+
+Balance: {round(self.balance,2)}
+
+""")
 
     # ---------------- STATS ----------------
 
-    def show_stats(self):
+    def stats(self):
 
         total = len(self.trade_log)
 
@@ -149,45 +147,29 @@ class PerformanceBot:
 
             return
 
-        wins = len([t for t in self.trade_log if t > 0])
+        wins = len([x for x in self.trade_log if x > 0])
 
-        losses = total - wins
+        winrate = (wins / total) * 100
 
-        win_rate = (wins / total) * 100
+        self.send(f"""
 
-        total_pnl = sum(self.trade_log)
-
-        avg_pnl = total_pnl / total
-
-        stats = f"""
-
-📊 PERFORMANCE UPDATE
+📊 STATS UPDATE
 
 Trades: {total}
 
-Wins: {wins}
-
-Losses: {losses}
-
-Win Rate: {round(win_rate,2)}%
-
-Total PnL: {round(total_pnl,4)}
-
-Avg Trade: {round(avg_pnl,5)}
+Winrate: {round(winrate,2)}%
 
 Balance: {round(self.balance,2)}
 
-"""
-
-        self.send_alert(stats)
+""")
 
     # ---------------- LOOP ----------------
 
     def run(self):
 
-        print("PERFORMANCE BOT ONLINE")
+        print("PAPER BOT RUNNING")
 
-        last_stats_time = time.time()
+        last_stats = time.time()
 
         while True:
 
@@ -199,33 +181,33 @@ Balance: {round(self.balance,2)}
 
                 continue
 
-            signal, score = self.analyze(price)
+            sig = self.signal(price)
 
-            print("PRICE:", price, "SIGNAL:", signal)
+            print("PRICE:", price, "SIGNAL:", sig)
 
             # open trade
 
-            if self.open_trade is None and signal != "NO TRADE":
+            if self.open_trade is None and sig != "NO TRADE":
 
-                self.open_trade(signal, price)
+                self.open(sig, price)
 
-            # close trade after 1 min
+            # close trade after 60 seconds
 
             elif self.open_trade is not None:
 
                 if time.time() - self.open_trade["time"] > 60:
 
-                    self.close_trade(price)
+                    self.close(price)
 
-            # send stats every 5 minutes
+            # stats every 5 minutes
 
-            if time.time() - last_stats_time > 300:
+            if time.time() - last_stats > 300:
 
-                self.show_stats()
+                self.stats()
 
-                last_stats_time = time.time()
+                last_stats = time.time()
 
             time.sleep(10)
 
-bot = PerformanceBot()
+bot = PaperBot()
 bot.run()
