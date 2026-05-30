@@ -21,6 +21,14 @@ class PaperBot:
 
         self.trade_log = []
 
+        # trading control
+
+        self.last_trade_time = 0
+
+        self.cooldown = 120
+
+        self.last_direction = None
+
     # ---------------- TELEGRAM ----------------
 
     def send(self, msg):
@@ -67,7 +75,7 @@ class PaperBot:
 
             return None
 
-    # ---------------- SIGNAL ENGINE ----------------
+    # ---------------- SIGNAL ----------------
 
     def signal(self, price):
 
@@ -77,53 +85,65 @@ class PaperBot:
 
             self.prices.pop(0)
 
-        if len(self.prices) < 6:
+        if len(self.prices) < 10:
 
             return "NO TRADE"
 
         # volatility filter
 
-        recent_range = max(self.prices[-5:]) - min(self.prices[-5:])
+        recent_range = max(self.prices[-10:]) - min(self.prices[-10:])
 
-        if recent_range < 0.0010:
-
-            return "NO TRADE"
-
-        score = 50
-
-        # trend
-
-        if self.prices[-1] > self.prices[-5]:
-
-            score += 25
-
-        else:
-
-            score += 25
-
-        # momentum
-
-        change = self.prices[-1] - self.prices[-2]
-
-        if change > 0:
-
-            score += 10
-
-        else:
-
-            score += 10
-
-        # threshold (more active than before)
-
-        if score < 65:
+        if recent_range < 0.0015:
 
             return "NO TRADE"
 
-        return "BUY" if self.prices[-1] > self.prices[-5] else "SELL"
+        # trend logic
+
+        if self.prices[-1] > self.prices[-8]:
+
+            return "BUY"
+
+        else:
+
+            return "SELL"
+
+    # ---------------- TRADE RULES ----------------
+
+    def can_trade(self, signal):
+
+        now = time.time()
+
+        if now - self.last_trade_time < self.cooldown:
+
+            return False
+
+        if signal == self.last_direction:
+
+            return False
+
+        return True
 
     # ---------------- OPEN TRADE ----------------
 
     def open_trade_fn(self, signal, price):
+
+        # SL / TP setup
+
+        sl_distance = 0.0010
+
+        tp_distance = 0.0020
+
+        if signal == "BUY":
+
+            sl = price - sl_distance
+
+            tp = price + tp_distance
+
+        else:
+
+            sl = price + sl_distance
+
+            tp = price - tp_distance
 
         self.open_trade = {
 
@@ -131,11 +151,29 @@ class PaperBot:
 
             "entry": price,
 
+            "sl": sl,
+
+            "tp": tp,
+
             "time": time.time()
 
         }
 
-        self.send(f"📥 OPEN {signal} @ {price}")
+        self.last_trade_time = time.time()
+
+        self.last_direction = signal
+
+        self.send(f"""
+
+📥 OPEN {signal}
+
+Entry: {price}
+
+SL: {round(sl,5)}
+
+TP: {round(tp,5)}
+
+""")
 
     # ---------------- CLOSE TRADE ----------------
 
@@ -147,21 +185,61 @@ class PaperBot:
 
         entry = t["entry"]
 
+        sl = t["sl"]
+
+        tp = t["tp"]
+
         side = t["type"]
 
-        pnl = (price - entry) if side == "BUY" else (entry - price)
+        result = ""
+
+        if side == "BUY":
+
+            if price <= sl:
+
+                pnl = -abs(entry - sl)
+
+                result = "STOP LOSS"
+
+            elif price >= tp:
+
+                pnl = abs(tp - entry)
+
+                result = "TAKE PROFIT"
+
+            else:
+
+                pnl = price - entry
+
+                result = "TIME EXIT"
+
+        else:
+
+            if price >= sl:
+
+                pnl = -abs(sl - entry)
+
+                result = "STOP LOSS"
+
+            elif price <= tp:
+
+                pnl = abs(entry - tp)
+
+                result = "TAKE PROFIT"
+
+            else:
+
+                pnl = entry - price
+
+                result = "TIME EXIT"
 
         self.balance += pnl
 
         self.trade_log.append(pnl)
 
-        result = "WIN" if pnl > 0 else "LOSS"
-
         self.send(f"""
 
-📤 CLOSE TRADE
-
-Result: {result}
+📤 CLOSED ({result})
 
 PnL: {round(pnl,5)}
 
@@ -221,21 +299,21 @@ Balance: {round(self.balance,2)}
 
             print("PRICE:", price, "SIGNAL:", sig)
 
-            # open trade
+            # OPEN TRADE
 
-            if self.open_trade is None and sig != "NO TRADE":
+            if self.open_trade is None:
 
-                self.open_trade_fn(sig, price)
+                if sig != "NO TRADE" and self.can_trade(sig):
 
-            # close after 60 sec
+                    self.open_trade_fn(sig, price)
+
+            # CLOSE TRADE (SL/TP check every loop)
 
             elif self.open_trade is not None:
 
-                if time.time() - self.open_trade["time"] > 60:
+                self.close_trade(price)
 
-                    self.close_trade(price)
-
-            # stats every 5 min
+            # STATS every 5 min
 
             if time.time() - last_stats > 300:
 
