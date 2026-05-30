@@ -21,11 +21,11 @@ class PaperBot:
 
         self.trade_log = []
 
-        # trading control
+        # controls
 
         self.last_trade_time = 0
 
-        self.cooldown = 120
+        self.cooldown = 90
 
         self.last_direction = None
 
@@ -81,25 +81,25 @@ class PaperBot:
 
         self.prices.append(price)
 
-        if len(self.prices) > 50:
+        if len(self.prices) > 40:
 
             self.prices.pop(0)
 
-        if len(self.prices) < 10:
+        if len(self.prices) < 6:
 
             return "NO TRADE"
 
-        # volatility filter
+        # softer volatility filter (balanced)
 
-        recent_range = max(self.prices[-10:]) - min(self.prices[-10:])
+        recent_range = max(self.prices[-8:]) - min(self.prices[-8:])
 
-        if recent_range < 0.0015:
+        if recent_range < 0.0008:
 
             return "NO TRADE"
 
-        # trend logic
+        # faster trend detection
 
-        if self.prices[-1] > self.prices[-8]:
+        if self.prices[-1] > self.prices[-5]:
 
             return "BUY"
 
@@ -107,7 +107,7 @@ class PaperBot:
 
             return "SELL"
 
-    # ---------------- TRADE RULES ----------------
+    # ---------------- CAN TRADE ----------------
 
     def can_trade(self, signal):
 
@@ -126,8 +126,6 @@ class PaperBot:
     # ---------------- OPEN TRADE ----------------
 
     def open_trade_fn(self, signal, price):
-
-        # SL / TP setup
 
         sl_distance = 0.0010
 
@@ -190,8 +188,6 @@ TP: {round(tp,5)}
         tp = t["tp"]
 
         side = t["type"]
-
-        result = ""
 
         if side == "BUY":
 
@@ -269,6 +265,8 @@ Balance: {round(self.balance,2)}
 
 Trades: {total}
 
+Wins: {wins}
+
 Winrate: {round(winrate,2)}%
 
 PnL: {round(total_pnl,4)}
@@ -299,7 +297,7 @@ Balance: {round(self.balance,2)}
 
             print("PRICE:", price, "SIGNAL:", sig)
 
-            # OPEN TRADE
+            # OPEN
 
             if self.open_trade is None:
 
@@ -307,13 +305,13 @@ Balance: {round(self.balance,2)}
 
                     self.open_trade_fn(sig, price)
 
-            # CLOSE TRADE (SL/TP check every loop)
+            # CLOSE (SL/TP check every cycle)
 
             elif self.open_trade is not None:
 
                 self.close_trade(price)
 
-            # STATS every 5 min
+            # STATS
 
             if time.time() - last_stats > 300:
 
