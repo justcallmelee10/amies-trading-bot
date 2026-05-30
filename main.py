@@ -4,7 +4,7 @@ import time
 BOT_TOKEN = "8637865419:AAH-pSZe4e1zgPOng9kcwYjpnxYS6v80v_c"
 CHAT_ID = "8236639818"
 
-BASE_URL = "https://api.exchangerate.host/latest"
+PRICE_URL = "https://api.frankfurter.app/latest?from=EUR&to=USD"
 
 
 class PaperBot:
@@ -28,10 +28,10 @@ class PaperBot:
         except Exception as e:
             print("TELEGRAM ERROR:", e)
 
-    # ---------------- PRICE (NO LIMITS) ----------------
+    # ---------------- PRICE (FIXED API) ----------------
     def get_price(self):
         try:
-            r = requests.get(BASE_URL + "?base=EUR&symbols=USD", timeout=10)
+            r = requests.get(PRICE_URL, timeout=10)
             data = r.json()
 
             if "rates" not in data:
@@ -154,7 +154,7 @@ Balance: {round(self.balance,2)}""")
     # ---------------- MAIN LOOP ----------------
     def run(self):
 
-        print("🔥 BOT STARTED - UNLIMITED DATA MODE")
+        print("🔥 BOT STARTED - STABLE FX MODE")
 
         while True:
 
