@@ -9,11 +9,19 @@ CHAT_ID = "8236639818"
 
 BASE_URL = "https://www.alphavantage.co/query"
 
-class TradingBot:
+class PaperTradingBot:
 
     def __init__(self):
 
         self.prices = []
+
+        self.open_trade = None
+
+        self.balance = 1000
+
+        self.trade_log = []
+
+    # ---------------- TELEGRAM ----------------
 
     def send_alert(self, message):
 
@@ -32,6 +40,8 @@ class TradingBot:
         except:
 
             pass
+
+    # ---------------- PRICE ----------------
 
     def get_price(self):
 
@@ -63,33 +73,27 @@ class TradingBot:
 
             return None
 
-    # ---------------------------
+    # ---------------- RSI ----------------
 
-    # RSI CALCULATION
+    def rsi(self):
 
-    # ---------------------------
+        if len(self.prices) < 10:
 
-    def calculate_rsi(self, period=10):
+            return 50
 
-        if len(self.prices) < period + 1:
+        gains, losses = 0, 0
 
-            return 50  # neutral default
+        for i in range(-10, -1):
 
-        gains = 0
+            diff = self.prices[i] - self.prices[i - 1]
 
-        losses = 0
+            if diff > 0:
 
-        for i in range(-period, -1):
-
-            change = self.prices[i] - self.prices[i - 1]
-
-            if change > 0:
-
-                gains += change
+                gains += diff
 
             else:
 
-                losses += abs(change)
+                losses += abs(diff)
 
         if losses == 0:
 
@@ -97,15 +101,11 @@ class TradingBot:
 
         rs = gains / losses
 
-        rsi = 100 - (100 / (1 + rs))
+        return 100 - (100 / (1 + rs))
 
-        return rsi
+    # ---------------- SIGNAL ----------------
 
     def analyze(self, price):
-
-        if price is None:
-
-            return "NO TRADE", 0, []
 
         self.prices.append(price)
 
@@ -116,8 +116,6 @@ class TradingBot:
         score = 50
 
         reasons = []
-
-        # trend
 
         if len(self.prices) > 5:
 
@@ -133,37 +131,17 @@ class TradingBot:
 
                 reasons.append("Downtrend")
 
-        # RSI filter
+        rsi = self.rsi()
 
-        rsi = self.calculate_rsi()
-
-        reasons.append(f"RSI: {round(rsi,2)}")
+        reasons.append(f"RSI {round(rsi,2)}")
 
         if rsi > 70:
 
-            score -= 25
-
-            reasons.append("Overbought - avoid BUY")
+            score -= 20
 
         elif rsi < 30:
 
-            score -= 25
-
-            reasons.append("Oversold - avoid SELL")
-
-        # zones
-
-        if price > 1.10:
-
-            score += 10
-
-            reasons.append("Upper zone")
-
-        elif price < 1.08:
-
-            score += 10
-
-            reasons.append("Lower zone")
+            score -= 20
 
         score = max(0, min(100, score))
 
@@ -175,13 +153,91 @@ class TradingBot:
 
         return signal, score, reasons
 
+    # ---------------- TRADE ENGINE ----------------
+
+    def open_trade_fn(self, signal, price):
+
+        self.open_trade = {
+
+            "signal": signal,
+
+            "entry": price,
+
+            "time": time.time()
+
+        }
+
+        msg = f"OPENED {signal} @ {price}"
+
+        self.send_alert(msg)
+
+    def close_trade(self, price):
+
+        trade = self.open_trade
+
+        self.open_trade = None
+
+        entry = trade["entry"]
+
+        signal = trade["signal"]
+
+        if signal == "BUY":
+
+            pnl = price - entry
+
+        else:
+
+            pnl = entry - price
+
+        self.balance += pnl
+
+        result = "WIN" if pnl > 0 else "LOSS"
+
+        log = {
+
+            "entry": entry,
+
+            "exit": price,
+
+            "pnl": pnl,
+
+            "result": result,
+
+            "balance": self.balance
+
+        }
+
+        self.trade_log.append(log)
+
+        msg = f"""
+
+CLOSED TRADE
+
+Result: {result}
+
+PnL: {round(pnl,5)}
+
+Balance: {round(self.balance,2)}
+
+"""
+
+        self.send_alert(msg)
+
+    # ---------------- LOOP ----------------
+
     def run(self):
 
-        print("RSI BOT ONLINE")
+        print("PAPER TRADING ACTIVE")
 
         while True:
 
             price = self.get_price()
+
+            if price is None:
+
+                time.sleep(5)
+
+                continue
 
             signal, score, reasons = self.analyze(price)
 
@@ -189,29 +245,25 @@ class TradingBot:
 
             print("SIGNAL:", signal)
 
-            print("CONFIDENCE:", score)
+            print("BALANCE:", self.balance)
 
-            if signal != "NO TRADE":
+            # open trade
 
-                msg = f"""
+            if self.open_trade is None and signal != "NO TRADE":
 
-📊 SIGNAL
+                self.open_trade_fn(signal, price)
 
-EUR/USD
+            # close trade after small move or time
 
-{signal}
+            elif self.open_trade is not None:
 
-Price: {price}
+                entry_time = self.open_trade["time"]
 
-Confidence: {score}
+                if time.time() - entry_time > 60:  # 1 min trade cycle
 
-{chr(10).join(reasons)}
+                    self.close_trade(price)
 
-"""
+            time.sleep(10)
 
-                self.send_alert(msg)
-
-            time.sleep(20)
-
-bot = TradingBot()
+bot = PaperTradingBot()
 bot.run()
