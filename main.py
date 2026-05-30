@@ -2,8 +2,7 @@ import requests
 import time
 
 API_KEY = "2UFIT1549JNPNLPY"
-BOT_TOKEN = "8637865419:AAH
-pSZe4e1zgPOng9kcwYjpnxYS6v80v_c"
+BOT_TOKEN = "8637865419:AAHpSZe4e1zgPOng9kcwYjpnxYS6v80v_c"
 CHAT_ID = "8236639818"
 
 BASE_URL = "https://www.alphavantage.co/query"
