@@ -21,6 +21,9 @@ class PaperBot:
         self.cooldown = 90
         self.last_direction = None
 
+        # 🔥 prevents spam + duplicate signals
+        self.last_signal = None
+
     # ---------------- TELEGRAM ----------------
     def send(self, msg):
         try:
@@ -50,7 +53,7 @@ class PaperBot:
         except:
             return None
 
-    # ---------------- SIGNAL ----------------
+    # ---------------- SIGNAL ENGINE ----------------
     def signal(self, price):
 
         self.prices.append(price)
@@ -82,7 +85,7 @@ class PaperBot:
 
         return "NO TRADE"
 
-    # ---------------- CAN TRADE ----------------
+    # ---------------- TRADE RULES ----------------
     def can_trade(self, signal):
 
         now = time.time()
@@ -112,10 +115,11 @@ class PaperBot:
         self.last_trade_time = time.time()
         self.last_direction = signal
 
-        self.send(f"""📥 {signal} @ {price}
+        self.send(f"""📥 {signal} ENTRY
+Price: {price}
 SL: {sl}
 TP: {tp}
-BALANCE: {self.balance}""")
+Balance: {self.balance}""")
 
     # ---------------- CLOSE TRADE ----------------
     def close_trade(self, price):
@@ -131,10 +135,10 @@ BALANCE: {self.balance}""")
         if side == "BUY":
             if price <= sl:
                 pnl = -abs(entry - sl)
-                result = "SL HIT"
+                result = "STOP LOSS"
             elif price >= tp:
                 pnl = abs(tp - entry)
-                result = "TP HIT"
+                result = "TAKE PROFIT"
             else:
                 pnl = price - entry
                 result = "TIME EXIT"
@@ -142,10 +146,10 @@ BALANCE: {self.balance}""")
         else:
             if price >= sl:
                 pnl = -abs(sl - entry)
-                result = "SL HIT"
+                result = "STOP LOSS"
             elif price <= tp:
                 pnl = abs(entry - tp)
-                result = "TP HIT"
+                result = "TAKE PROFIT"
             else:
                 pnl = entry - price
                 result = "TIME EXIT"
@@ -153,14 +157,14 @@ BALANCE: {self.balance}""")
         self.balance += pnl
         self.trade_log.append(pnl)
 
-        self.send(f"""📤 CLOSE ({result})
+        self.send(f"""📤 {result}
 PnL: {round(pnl,5)}
-BALANCE: {round(self.balance,2)}""")
+Balance: {round(self.balance,2)}""")
 
-    # ---------------- MAIN LOOP ----------------
+    # ---------------- MAIN LOOP (CLEAN MODE) ----------------
     def run(self):
 
-        print("BOT RUNNING")
+        print("BOT RUNNING - CLEAN TRADER MODE")
 
         while True:
 
@@ -174,16 +178,19 @@ BALANCE: {round(self.balance,2)}""")
 
                 sig = self.signal(price)
 
-                print(f"PRICE: {price} | SIGNAL: {sig}")
+                # 🔥 ONLY ACT ON NEW SIGNALS
+                if sig == self.last_signal:
+                    time.sleep(5)
+                    continue
 
-                self.send(f"""PRICE: {price}
-SIGNAL: {sig}
-BALANCE: {self.balance}""")
+                self.last_signal = sig
 
+                # OPEN TRADE
                 if self.open_trade is None:
                     if sig != "NO TRADE" and self.can_trade(sig):
                         self.open_trade_fn(sig, price)
 
+                # CLOSE TRADE
                 else:
                     self.close_trade(price)
 
