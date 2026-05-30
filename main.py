@@ -67,7 +67,7 @@ class PaperBot:
 
             return None
 
-    # ---------------- SIGNAL ----------------
+    # ---------------- SIGNAL ENGINE ----------------
 
     def signal(self, price):
 
@@ -81,17 +81,49 @@ class PaperBot:
 
             return "NO TRADE"
 
+        # volatility filter
+
+        recent_range = max(self.prices[-5:]) - min(self.prices[-5:])
+
+        if recent_range < 0.0010:
+
+            return "NO TRADE"
+
+        score = 50
+
+        # trend
+
         if self.prices[-1] > self.prices[-5]:
 
-            return "BUY"
+            score += 25
 
         else:
 
-            return "SELL"
+            score += 25
 
-    # ---------------- TRADE OPEN ----------------
+        # momentum
 
-    def open(self, signal, price):
+        change = self.prices[-1] - self.prices[-2]
+
+        if change > 0:
+
+            score += 10
+
+        else:
+
+            score += 10
+
+        # threshold (more active than before)
+
+        if score < 65:
+
+            return "NO TRADE"
+
+        return "BUY" if self.prices[-1] > self.prices[-5] else "SELL"
+
+    # ---------------- OPEN TRADE ----------------
+
+    def open_trade_fn(self, signal, price):
 
         self.open_trade = {
 
@@ -105,9 +137,9 @@ class PaperBot:
 
         self.send(f"📥 OPEN {signal} @ {price}")
 
-    # ---------------- TRADE CLOSE ----------------
+    # ---------------- CLOSE TRADE ----------------
 
-    def close(self, price):
+    def close_trade(self, price):
 
         t = self.open_trade
 
@@ -151,23 +183,27 @@ Balance: {round(self.balance,2)}
 
         winrate = (wins / total) * 100
 
+        total_pnl = sum(self.trade_log)
+
         self.send(f"""
 
-📊 STATS UPDATE
+📊 STATS
 
 Trades: {total}
 
 Winrate: {round(winrate,2)}%
 
+PnL: {round(total_pnl,4)}
+
 Balance: {round(self.balance,2)}
 
 """)
 
-    # ---------------- LOOP ----------------
+    # ---------------- MAIN LOOP ----------------
 
     def run(self):
 
-        print("PAPER BOT RUNNING")
+        print("BOT RUNNING")
 
         last_stats = time.time()
 
@@ -189,17 +225,17 @@ Balance: {round(self.balance,2)}
 
             if self.open_trade is None and sig != "NO TRADE":
 
-                self.open(sig, price)
+                self.open_trade_fn(sig, price)
 
-            # close trade after 60 seconds
+            # close after 60 sec
 
             elif self.open_trade is not None:
 
                 if time.time() - self.open_trade["time"] > 60:
 
-                    self.close(price)
+                    self.close_trade(price)
 
-            # stats every 5 minutes
+            # stats every 5 min
 
             if time.time() - last_stats > 300:
 
