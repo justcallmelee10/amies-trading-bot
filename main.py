@@ -28,36 +28,44 @@ class PaperBot:
 
     # ---------------- SAFE PRICE FEED ----------------
     def get_price(self):
+
+    try:
+        url = "https://stooq.com/q/l/?s=eurusd&f=sd2t2ohlcv&h&e=json"
+        r = requests.get(url, timeout=10)
+
+        # must be valid response
+        if r.status_code != 200:
+            print("BAD STATUS:", r.status_code)
+            return getattr(self, "last_price", None)
+
         try:
-            url = "https://stooq.com/q/l/?s=eurusd&f=sd2t2ohlcv&h&e=json"
-            r = requests.get(url, timeout=10)
+            data = r.json()
+        except Exception:
+            print("BROKEN JSON, USING LAST PRICE")
+            return getattr(self, "last_price", None)
 
-            if r.status_code != 200:
-                print("BAD STATUS:", r.status_code)
-                return None
+        symbols = data.get("symbols")
 
-            # SAFE JSON PARSING
-            try:
-                data = r.json()
-            except Exception:
-                print("RAW RESPONSE (NOT JSON):", r.text[:200])
-                return None
+        if not symbols or "close" not in symbols[0]:
+            print("BAD STRUCTURE:", data)
+            return getattr(self, "last_price", None)
 
-            if "symbols" not in data or not data["symbols"]:
-                print("BAD RESPONSE FORMAT:", data)
-                return None
+        price = symbols[0]["close"]
 
-            price = data["symbols"][0].get("close")
+        if price is None:
+            return getattr(self, "last_price", None)
 
-            if price is None:
-                return None
+        price = float(price)
 
-            return float(price)
+        # store last good price
+        self.last_price = price
 
-        except Exception as e:
-            print("PRICE ERROR:", e)
-            return None
+        return price
 
+    except Exception as e:
+        print("PRICE ERROR:", e)
+        return getattr(self, "last_price", None)
+        
     # ---------------- SIGNAL ENGINE ----------------
     def signal(self, price):
 
