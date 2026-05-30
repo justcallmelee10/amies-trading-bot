@@ -21,6 +21,10 @@ class PaperBot:
         self.last_direction = None
         self.last_signal = None
 
+        # 🔥 IMPORTANT: prevents API spam crashes
+        self.last_api_call = 0
+        self.api_delay = 20  # seconds
+
     # ---------------- TELEGRAM ----------------
     def send(self, msg):
         try:
@@ -29,8 +33,15 @@ class PaperBot:
         except Exception as e:
             print("TELEGRAM ERROR:", e)
 
-    # ---------------- PRICE ----------------
+    # ---------------- PRICE (SAFE + THROTTLED) ----------------
     def get_price(self):
+
+        # 🔥 prevent API spam
+        if time.time() - self.last_api_call < self.api_delay:
+            return None
+
+        self.last_api_call = time.time()
+
         try:
             r = requests.get(BASE_URL, params={
                 "function": "CURRENCY_EXCHANGE_RATE",
@@ -41,20 +52,20 @@ class PaperBot:
 
             data = r.json()
 
-            if "Realtime Currency Exchange Rate" not in data:
-                print("BAD API RESPONSE:", data)
+            # handle API limits / errors
+            if "Note" in data:
+                print("RATE LIMIT HIT - WAITING")
                 return None
 
-            block = data["Realtime Currency Exchange Rate"]
-
-            if "5. Exchange Rate" not in block:
-                print("MISSING PRICE FIELD:", block)
+            block = data.get("Realtime Currency Exchange Rate")
+            if not block:
+                print("BAD API RESPONSE:", data)
                 return None
 
             return float(block["5. Exchange Rate"])
 
         except Exception as e:
-            print("PRICE FETCH ERROR:", e)
+            print("PRICE ERROR:", e)
             return None
 
     # ---------------- SIGNAL ENGINE ----------------
@@ -164,10 +175,10 @@ Balance: {self.balance}""")
 PnL: {round(pnl,5)}
 Balance: {round(self.balance,2)}""")
 
-    # ---------------- MAIN LOOP (SAFE MODE) ----------------
+    # ---------------- MAIN LOOP ----------------
     def run(self):
 
-        print("🔥 BOT STARTED - SAFE MODE")
+        print("🔥 BOT STARTED - STABLE MODE")
 
         while True:
 
@@ -176,29 +187,32 @@ Balance: {round(self.balance,2)}""")
                 price = self.get_price()
 
                 if price is None:
-                    time.sleep(5)
+                    time.sleep(20)
                     continue
 
                 sig = self.signal(price)
 
+                # prevent duplicate spam signals
                 if sig == self.last_signal:
-                    time.sleep(5)
+                    time.sleep(20)
                     continue
 
                 self.last_signal = sig
 
+                # OPEN TRADE
                 if self.open_trade is None:
                     if sig != "NO TRADE" and self.can_trade(sig):
                         self.open_trade_fn(sig, price)
 
+                # CLOSE TRADE
                 else:
                     self.close_trade(price)
 
-                time.sleep(5)
+                time.sleep(20)
 
             except Exception as e:
                 print("LOOP ERROR:", e)
-                time.sleep(5)
+                time.sleep(20)
 
 
 # ---------------- START ----------------
