@@ -47,25 +47,17 @@ class PaperBot:
 
         try:
 
-            r = requests.get(
+            r = requests.get(BASE_URL, params={
 
-                BASE_URL,
+                "function": "CURRENCY_EXCHANGE_RATE",
 
-                params={
+                "from_currency": "EUR",
 
-                    "function": "CURRENCY_EXCHANGE_RATE",
+                "to_currency": "USD",
 
-                    "from_currency": "EUR",
+                "apikey": API_KEY
 
-                    "to_currency": "USD",
-
-                    "apikey": API_KEY
-
-                },
-
-                timeout=10
-
-            )
+            }, timeout=10)
 
             data = r.json()
 
@@ -81,51 +73,59 @@ class PaperBot:
 
             return None
 
-    # ---------------- SIGNAL (FIXED, REALISTIC) ----------------
+    # ---------------- STRATEGY (OPTIMIZED) ----------------
 
     def signal(self, price):
 
         self.prices.append(price)
 
-        if len(self.prices) > 60:
+        if len(self.prices) > 80:
 
             self.prices.pop(0)
 
-        if len(self.prices) < 10:
+        if len(self.prices) < 15:
 
             return "NO TRADE"
 
-        window = self.prices[-8:]
+        # ---------------- MOMENTUM ----------------
 
-        recent_range = max(window) - min(window)
+        short = self.prices[-3:]
 
-        # FIX: realistic adaptive threshold (prevents permanent NO TRADE)
+        mid = self.prices[-8:]
 
-        avg_price = sum(window) / len(window)
+        long = self.prices[-15:]
 
-        threshold = avg_price * 0.0002
+        short_trend = short[-1] - short[0]
 
-        if recent_range < threshold:
+        mid_trend = mid[-1] - mid[0]
 
-            # fallback logic instead of freezing
+        volatility = max(mid) - min(mid)
 
-            if self.prices[-1] > self.prices[-3]:
+        avg = sum(mid) / len(mid)
 
-                return "BUY"
+        # dynamic threshold (removes flat-market noise issue)
 
-            else:
+        threshold = avg * 0.00025
 
-                return "SELL"
+        # ---------------- FILTER 1: MARKET ACTIVITY ----------------
 
-        # trend logic
+        if volatility < threshold:
 
-        if self.prices[-1] > self.prices[-5]:
+            return "NO TRADE"
+
+        # ---------------- FILTER 2: MOMENTUM ALIGNMENT ----------------
+
+        if short_trend > 0 and mid_trend > 0:
 
             return "BUY"
 
-        else:
+        if short_trend < 0 and mid_trend < 0:
 
             return "SELL"
+
+        # ---------------- FILTER 3: WEAK / CHOPPY MARKET ----------------
+
+        return "NO TRADE"
 
     # ---------------- CAN TRADE ----------------
 
@@ -147,21 +147,9 @@ class PaperBot:
 
     def open_trade_fn(self, signal, price):
 
-        sl_distance = 0.0010
+        sl = price - 0.0010 if signal == "BUY" else price + 0.0010
 
-        tp_distance = 0.0020
-
-        if signal == "BUY":
-
-            sl = price - sl_distance
-
-            tp = price + tp_distance
-
-        else:
-
-            sl = price + sl_distance
-
-            tp = price - tp_distance
+        tp = price + 0.0020 if signal == "BUY" else price - 0.0020
 
         self.open_trade = {
 
@@ -181,11 +169,7 @@ class PaperBot:
 
         self.last_direction = signal
 
-        self.send(
-
-            f"📥 OPEN {signal}\nEntry: {price}\nSL: {sl}\nTP: {tp}"
-
-        )
+        self.send(f"📥 OPEN {signal}\nEntry: {price}\nSL: {sl}\nTP: {tp}")
 
     # ---------------- CLOSE TRADE ----------------
 
@@ -247,39 +231,13 @@ class PaperBot:
 
         self.trade_log.append(pnl)
 
-        self.send(
-
-            f"📤 CLOSE ({result})\nPnL: {round(pnl,5)}\nBalance: {round(self.balance,2)}"
-
-        )
-
-    # ---------------- STATS ----------------
-
-    def stats(self):
-
-        total = len(self.trade_log)
-
-        if total == 0:
-
-            return
-
-        wins = len([x for x in self.trade_log if x > 0])
-
-        winrate = (wins / total) * 100
-
-        total_pnl = sum(self.trade_log)
-
-        self.send(
-
-            f"📊 STATS\nTrades: {total}\nWins: {wins}\nWinrate: {round(winrate,2)}%\nPnL: {round(total_pnl,4)}\nBalance: {round(self.balance,2)}"
-
-        )
+        self.send(f"📤 CLOSE ({result})\nPnL: {round(pnl,5)}\nBalance: {round(self.balance,2)}")
 
     # ---------------- MAIN LOOP ----------------
 
     def run(self):
 
-        print("BOT RUNNING")
+        print("BOT RUNNING (OPTIMIZED STRATEGY)")
 
         last_stats = time.time()
 
@@ -309,11 +267,27 @@ class PaperBot:
 
             if time.time() - last_stats > 300:
 
-                self.stats()
+                if len(self.trade_log) > 0:
+
+                    wins = len([x for x in self.trade_log if x > 0])
+
+                    winrate = (wins / len(self.trade_log)) * 100
+
+                    self.send(f"""
+
+📊 STATS
+
+Trades: {len(self.trade_log)}
+
+Winrate: {round(winrate,2)}%
+
+Balance: {round(self.balance,2)}
+
+""")
 
                 last_stats = time.time()
 
-            time.sleep(10)
+            time.sleep(5)
 
 bot = PaperBot()
 bot.run()
