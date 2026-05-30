@@ -23,22 +23,31 @@ class PaperBot:
         try:
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
             requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=10)
-        except Exception as e:
-            print("TELEGRAM ERROR:", e)
+        except:
+            pass
 
-    # ---------------- PRICE (STABLE SOURCE - NO KEYS) ----------------
+    # ---------------- SAFE PRICE FETCH (NO CRASH) ----------------
     def get_price(self):
         try:
-            # EUR/USD from Stooq (free, stable)
             url = "https://stooq.com/q/l/?s=eurusd&f=sd2t2ohlcv&h&e=json"
             r = requests.get(url, timeout=10)
-            data = r.json()
 
-            if "symbols" not in data:
-                print("BAD RESPONSE:", data)
+            # 🔥 DO NOT ASSUME JSON IS VALID
+            if r.status_code != 200:
+                print("BAD STATUS CODE:", r.status_code)
                 return None
 
-            price = data["symbols"][0]["close"]
+            try:
+                data = r.json()
+            except Exception:
+                print("RAW RESPONSE (NOT JSON):", r.text[:200])
+                return None
+
+            if "symbols" not in data:
+                print("BAD RESPONSE FORMAT:", data)
+                return None
+
+            price = data["symbols"][0].get("close")
 
             if price is None:
                 return None
@@ -159,7 +168,7 @@ Balance: {round(self.balance,2)}""")
     # ---------------- MAIN LOOP ----------------
     def run(self):
 
-        print("🔥 BOT STARTED - FINAL STABLE VERSION")
+        print("🔥 BOT STARTED - CRASH SAFE MODE")
 
         while True:
 
@@ -193,7 +202,6 @@ Balance: {round(self.balance,2)}""")
                 time.sleep(10)
 
 
-# ---------------- START ----------------
 if __name__ == "__main__":
     bot = PaperBot()
     bot.run()
