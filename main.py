@@ -1,11 +1,10 @@
 import requests
 import time
 
-API_KEY = "2UFIT1549JNPNLPY"
 BOT_TOKEN = "8637865419:AAH-pSZe4e1zgPOng9kcwYjpnxYS6v80v_c"
 CHAT_ID = "8236639818"
 
-BASE_URL = "https://www.alphavantage.co/query"
+BASE_URL = "https://api.exchangerate.host/latest"
 
 
 class PaperBot:
@@ -21,10 +20,6 @@ class PaperBot:
         self.last_direction = None
         self.last_signal = None
 
-        # 🔥 IMPORTANT: prevents API spam crashes
-        self.last_api_call = 0
-        self.api_delay = 20  # seconds
-
     # ---------------- TELEGRAM ----------------
     def send(self, msg):
         try:
@@ -33,36 +28,17 @@ class PaperBot:
         except Exception as e:
             print("TELEGRAM ERROR:", e)
 
-    # ---------------- PRICE (SAFE + THROTTLED) ----------------
+    # ---------------- PRICE (NO LIMITS) ----------------
     def get_price(self):
-
-        # 🔥 prevent API spam
-        if time.time() - self.last_api_call < self.api_delay:
-            return None
-
-        self.last_api_call = time.time()
-
         try:
-            r = requests.get(BASE_URL, params={
-                "function": "CURRENCY_EXCHANGE_RATE",
-                "from_currency": "EUR",
-                "to_currency": "USD",
-                "apikey": API_KEY
-            }, timeout=10)
-
+            r = requests.get(BASE_URL + "?base=EUR&symbols=USD", timeout=10)
             data = r.json()
 
-            # handle API limits / errors
-            if "Note" in data:
-                print("RATE LIMIT HIT - WAITING")
+            if "rates" not in data:
+                print("BAD RESPONSE:", data)
                 return None
 
-            block = data.get("Realtime Currency Exchange Rate")
-            if not block:
-                print("BAD API RESPONSE:", data)
-                return None
-
-            return float(block["5. Exchange Rate"])
+            return float(data["rates"]["USD"])
 
         except Exception as e:
             print("PRICE ERROR:", e)
@@ -178,7 +154,7 @@ Balance: {round(self.balance,2)}""")
     # ---------------- MAIN LOOP ----------------
     def run(self):
 
-        print("🔥 BOT STARTED - STABLE MODE")
+        print("🔥 BOT STARTED - UNLIMITED DATA MODE")
 
         while True:
 
@@ -187,32 +163,29 @@ Balance: {round(self.balance,2)}""")
                 price = self.get_price()
 
                 if price is None:
-                    time.sleep(20)
+                    time.sleep(5)
                     continue
 
                 sig = self.signal(price)
 
-                # prevent duplicate spam signals
                 if sig == self.last_signal:
-                    time.sleep(20)
+                    time.sleep(5)
                     continue
 
                 self.last_signal = sig
 
-                # OPEN TRADE
                 if self.open_trade is None:
                     if sig != "NO TRADE" and self.can_trade(sig):
                         self.open_trade_fn(sig, price)
 
-                # CLOSE TRADE
                 else:
                     self.close_trade(price)
 
-                time.sleep(20)
+                time.sleep(5)
 
             except Exception as e:
                 print("LOOP ERROR:", e)
-                time.sleep(20)
+                time.sleep(5)
 
 
 # ---------------- START ----------------
