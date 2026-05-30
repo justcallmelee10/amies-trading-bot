@@ -23,12 +23,24 @@ class PaperBot:
 
     # ---------------- TELEGRAM ----------------
     def send(self, msg):
-        try:
-            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-            requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=10)
-        except:
-            pass
+    try:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
+        r = requests.post(
+            url,
+            data={
+                "chat_id": CHAT_ID,
+                "text": msg
+            },
+            timeout=10
+        )
+
+        print("TELEGRAM STATUS:", r.status_code)
+        print("TELEGRAM RESPONSE:", r.text)
+
+    except Exception as e:
+        print("TELEGRAM ERROR:", e)
+        
     # ---------------- PRICE ENGINE (SAFE + MULTI SOURCE) ----------------
     def get_price(self):
 
@@ -219,4 +231,7 @@ class PaperBot:
 # ---------------- START ----------------
 if __name__ == "__main__":
     bot = PaperBot()
+
+    bot.send("✅ BOT STARTED")
+
     bot.run()
