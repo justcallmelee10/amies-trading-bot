@@ -1,10 +1,6 @@
 import requests
 import time
 
-# =========================
-# CONFIG (FILL THESE)
-# =========================
-
 API_KEY = "2UFIT1549JNPNLPY"
 BOT_TOKEN = "8637865419:AAH-pSZe4e1zgPOng9kcwYjpnxYS6v80v_c"
 CHAT_ID = "8236639818"
@@ -12,38 +8,35 @@ CHAT_ID = "8236639818"
 BASE_URL = "https://www.alphavantage.co/query"
 
 
-# =========================
-# BOT CORE
-# =========================
-
 class TradingBot:
 
     def __init__(self):
         self.prices = []
 
-    # -------------------------
-    # TELEGRAM ALERT SYSTEM
-    # -------------------------
+        # cooldown system
+        self.last_signal = None
+        self.last_alert_time = 0
+
+        # 15 minutes cooldown
+        self.cooldown_seconds = 900
+
     def send_alert(self, message):
+
         try:
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
             response = requests.post(url, data={
                 "chat_id": CHAT_ID,
                 "text": message
-            }, timeout=10)
+            })
 
-            # DEBUG OUTPUT (IMPORTANT)
-            print("📩 TELEGRAM STATUS:", response.status_code)
-            print("📩 TELEGRAM RESPONSE:", response.text)
+            print("TELEGRAM:", response.status_code)
 
         except Exception as e:
-            print("❌ TELEGRAM ERROR:", e)
+            print("TELEGRAM ERROR:", e)
 
-    # -------------------------
-    # GET MARKET PRICE
-    # -------------------------
     def get_price(self):
+
         try:
             response = requests.get(BASE_URL, params={
                 "function": "CURRENCY_EXCHANGE_RATE",
@@ -54,24 +47,17 @@ class TradingBot:
 
             data = response.json()
 
-            if "Note" in data:
-                print("⏳ API LIMIT HIT")
-                return None
-
             block = data.get("Realtime Currency Exchange Rate")
+
             if not block:
-                print("⚠️ NO MARKET DATA")
                 return None
 
             return float(block["5. Exchange Rate"])
 
         except Exception as e:
-            print("❌ PRICE ERROR:", e)
+            print("PRICE ERROR:", e)
             return None
 
-    # -------------------------
-    # STRATEGY ENGINE
-    # -------------------------
     def analyze(self, price):
 
         if price is None:
@@ -85,16 +71,18 @@ class TradingBot:
         score = 50
         reasons = []
 
-        # trend logic (simple but stable)
+        # trend
         if len(self.prices) > 5:
+
             if self.prices[-1] > self.prices[-5]:
                 score += 20
-                reasons.append("Uptrend detected")
+                reasons.append("Uptrend")
+
             else:
                 score += 20
-                reasons.append("Downtrend detected")
+                reasons.append("Downtrend")
 
-        # zone logic
+        # zones
         if price > 1.10:
             score += 10
             reasons.append("Upper zone")
@@ -103,7 +91,6 @@ class TradingBot:
             score += 10
             reasons.append("Lower zone")
 
-        # clamp score
         score = max(0, min(100, score))
 
         if score < 75:
@@ -113,28 +100,36 @@ class TradingBot:
 
         return signal, score, reasons
 
-    # -------------------------
-    # MAIN LOOP
-    # -------------------------
+    def can_send_signal(self, signal):
+
+        now = time.time()
+
+        # cooldown active
+        if signal == self.last_signal:
+            if now - self.last_alert_time < self.cooldown_seconds:
+                return False
+
+        return True
+
     def run(self):
-        print("🚀 TELEGRAM TRADING BOT STARTED")
+
+        print("COOLDOWN BOT ONLINE")
 
         while True:
 
             price = self.get_price()
+
             signal, score, reasons = self.analyze(price)
 
-            print("\n----------------------")
-            print("PRICE:", price)
+            print("\nPRICE:", price)
             print("SIGNAL:", signal)
             print("CONFIDENCE:", score)
 
-            for r in reasons:
-                print("REASON:", r)
-
-            # SEND ALERT ONLY ON TRADE
             if signal != "NO TRADE":
-                message = f"""
+
+                if self.can_send_signal(signal):
+
+                    message = f"""
 📊 TRADE SIGNAL
 
 PAIR: EUR/USD
@@ -146,14 +141,16 @@ REASONS:
 {chr(10).join(reasons)}
 """
 
-                self.send_alert(message)
+                    self.send_alert(message)
+
+                    self.last_signal = signal
+                    self.last_alert_time = time.time()
+
+                else:
+                    print("⏳ SIGNAL COOLDOWN ACTIVE")
 
             time.sleep(20)
 
-
-# =========================
-# START BOT
-# =========================
 
 bot = TradingBot()
 bot.run()
