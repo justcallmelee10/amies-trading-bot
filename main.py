@@ -15,7 +15,6 @@ class PaperBot:
         self.prices = []
         self.balance = 1000
         self.open_trade = None
-        self.trade_log = []
 
         self.last_trade_time = 0
         self.cooldown = 90
@@ -83,7 +82,7 @@ class PaperBot:
 
         return "NO TRADE"
 
-    # ---------------- TRADE RULES ----------------
+    # ---------------- TRADE CONTROL ----------------
     def can_trade(self, signal):
 
         now = time.time()
@@ -153,7 +152,6 @@ Balance: {self.balance}""")
                 result = "TIME EXIT"
 
         self.balance += pnl
-        self.trade_log.append(pnl)
 
         self.send(f"""📤 {result}
 PnL: {round(pnl,5)}
@@ -162,7 +160,7 @@ Balance: {round(self.balance,2)}""")
     # ---------------- MAIN LOOP ----------------
     def run(self):
 
-        print("BOT RUNNING - CLEAN TRADER MODE")
+        print("BOT STARTED")
 
         while True:
 
@@ -199,7 +197,7 @@ Balance: {round(self.balance,2)}""")
                 time.sleep(5)
 
 
-# ---------------- START BOT ----------------
+# ---------------- START ----------------
 if __name__ == "__main__":
     bot = PaperBot()
     bot.run()
