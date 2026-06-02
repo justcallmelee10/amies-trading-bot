@@ -16,9 +16,14 @@ class PaperBot:
         self.open_trade = None
 
         self.last_trade_time = 0
-        self.cooldown = 60
+        self.cooldown = 20
 
-        self.last_direction = None
+        self.last_signal = None
+
+        # 🧠 AI MEMORY
+        self.trades = []
+        self.wins = 0
+        self.losses = 0
 
     # ---------------- TELEGRAM ----------------
     def send(self, msg):
@@ -34,100 +39,120 @@ class PaperBot:
     # ---------------- PRICE ----------------
     def get_price(self):
 
-        try:
-            r = requests.get(
-                "https://api.fxratesapi.com/latest?base=EUR&currencies=USD",
-                timeout=10
-            )
+        urls = [
+            "https://api.fxratesapi.com/latest?base=EUR&currencies=USD",
+            "https://api.exchangerate.host/latest?base=EUR&symbols=USD"
+        ]
 
-            data = r.json()
-            price = data.get("rates", {}).get("USD")
+        for url in urls:
+            try:
+                r = requests.get(url, timeout=10)
+                data = r.json()
 
-            if price:
-                self.last_price = float(price)
-                return float(price)
+                price = None
+                if "rates" in data:
+                    price = data["rates"].get("USD")
 
-        except:
-            pass
+                if price:
+                    self.last_price = float(price)
+                    return float(price)
+
+            except:
+                continue
 
         return self.last_price
 
-    # ---------------- STRATEGY (UPGRADED) ----------------
+    # ---------------- EMA (TREND CORE) ----------------
+    def ema(self, period):
+        if len(self.prices) < period:
+            return sum(self.prices) / len(self.prices)
+
+        k = 2 / (period + 1)
+        ema = self.prices[0]
+
+        for p in self.prices:
+            ema = p * k + ema * (1 - k)
+
+        return ema
+
+    # ---------------- SIGNAL ENGINE (AI SCORING) ----------------
     def signal(self, price):
 
         self.prices.append(price)
-
-        if len(self.prices) > 80:
+        if len(self.prices) > 100:
             self.prices.pop(0)
 
         if len(self.prices) < 20:
-            return "NO TRADE"
+            return "NO TRADE", 0
 
-        # ---------------- LAYER 1: TREND ----------------
-        fast = sum(self.prices[-5:]) / 5
-        slow = sum(self.prices[-20:]) / 20
+        ema_fast = self.ema(5)
+        ema_slow = self.ema(20)
 
-        trend_up = fast > slow
-        trend_down = fast < slow
-
-        # ---------------- LAYER 2: MOMENTUM ----------------
         momentum = self.prices[-1] - self.prices[-5]
 
-        strong_momentum = abs(momentum) > (price * 0.0002)
+        trend_up = ema_fast > ema_slow
+        trend_down = ema_fast < ema_slow
 
-        # ---------------- LAYER 3: VOLATILITY FILTER ----------------
-        recent = self.prices[-10:]
-        volatility = max(recent) - min(recent)
+        # 🧠 confidence score (0 → 1)
+        confidence = 0.5
 
-        low_noise = volatility > price * 0.0003
+        if trend_up:
+            confidence += 0.2
+        if trend_down:
+            confidence += 0.2
 
-        # ---------------- DECISION LOGIC ----------------
-        if not strong_momentum or not low_noise:
-            return "NO TRADE"
+        if abs(momentum) > price * 0.00015:
+            confidence += 0.2
+
+        if abs(ema_fast - ema_slow) > 0:
+            confidence += 0.1
+
+        # decision rules
+        if confidence < 0.65:
+            return "NO TRADE", confidence
 
         if trend_up and momentum > 0:
-            return "BUY"
+            return "BUY", confidence
 
         if trend_down and momentum < 0:
-            return "SELL"
+            return "SELL", confidence
 
-        return "NO TRADE"
+        return "NO TRADE", confidence
 
     # ---------------- RISK CONTROL ----------------
     def can_trade(self, signal):
-
         now = time.time()
 
         if now - self.last_trade_time < self.cooldown:
             return False
 
-        if signal == self.last_direction:
+        if signal == self.last_signal:
             return False
 
         return True
 
     # ---------------- OPEN TRADE ----------------
-    def open_trade_fn(self, signal, price):
+    def open_trade_fn(self, signal, price, confidence):
 
-        sl = price * (0.999) if signal == "BUY" else price * (1.001)
-        tp = price * (1.002) if signal == "BUY" else price * (0.998)
+        sl = price * (0.999)
+        tp = price * (1.0015)
 
         self.open_trade = {
             "type": signal,
             "entry": price,
             "sl": sl,
             "tp": tp,
-            "time": time.time()
+            "confidence": confidence
         }
 
         self.last_trade_time = time.time()
-        self.last_direction = signal
+        self.last_signal = signal
 
         self.send(
-            f"📥 STRATEGY ENTRY {signal}\nPrice: {price}\nSL: {sl}\nTP: {tp}\nBalance: {self.balance}"
+            f"📥 OPEN {signal}\nPrice: {price}\nConfidence: {round(confidence,2)}\nSL: {sl}\nTP: {tp}"
         )
 
-    # ---------------- CLOSE TRADE ----------------
+    # ---------------- CLOSE TRADE + LEARNING ----------------
     def close_trade(self, price):
 
         t = self.open_trade
@@ -136,49 +161,56 @@ class PaperBot:
         entry = t["entry"]
         side = t["type"]
 
-        if side == "BUY":
-            pnl = price - entry
-        else:
-            pnl = entry - price
+        pnl = (price - entry) if side == "BUY" else (entry - price)
 
         self.balance += pnl
 
+        # 🧠 learning
+        if pnl > 0:
+            self.wins += 1
+            result = "WIN"
+        else:
+            self.losses += 1
+            result = "LOSS"
+
+        self.trades.append(pnl)
+
+        winrate = self.wins / (self.wins + self.losses)
+
         self.send(
-            f"📤 EXIT {side}\nPnL: {round(pnl,5)}\nBalance: {round(self.balance,2)}"
+            f"📤 CLOSE {side}\n"
+            f"Result: {result}\n"
+            f"PnL: {round(pnl,5)}\n"
+            f"Balance: {round(self.balance,2)}\n"
+            f"WinRate: {round(winrate*100,1)}%"
         )
 
     # ---------------- MAIN LOOP ----------------
     def run(self):
 
-        self.send("✅ UPGRADED STRATEGY BOT STARTED")
+        self.send("🚀 AI FREE BOT STARTED")
 
         while True:
 
-            try:
+            price = self.get_price()
 
-                price = self.get_price()
+            print("PRICE:", price)
 
-                print("PRICE:", price)
-
-                if price is None:
-                    time.sleep(3)
-                    continue
-
-                sig = self.signal(price)
-
-                print("SIGNAL:", sig)
-
-                if self.open_trade is None:
-                    if sig != "NO TRADE" and self.can_trade(sig):
-                        self.open_trade_fn(sig, price)
-                else:
-                    self.close_trade(price)
-
+            if price is None:
                 time.sleep(3)
+                continue
 
-            except Exception as e:
-                print("ERROR:", e)
-                time.sleep(3)
+            sig, conf = self.signal(price)
+
+            print("SIGNAL:", sig, "CONF:", conf)
+
+            if self.open_trade is None:
+                if sig != "NO TRADE" and self.can_trade(sig):
+                    self.open_trade_fn(sig, price, conf)
+            else:
+                self.close_trade(price)
+
+            time.sleep(3)
 
 
 if __name__ == "__main__":
